@@ -11,6 +11,7 @@ Application de révision de la comptabilité et de l’analyse financière pour 
 - onglet d’explication des 43 formules, écrites sans abréviation avec le sens de chaque calcul ;
 - lecture vocale française avec sélection automatique de la meilleure voix disponible ;
 - flashcards, QCM dans les deux sens, réponses libres, définitions complètes à l’écrit ou au micro, textes et formules à trous avec ou sans pastilles ;
+- entraînement au choix sur chaque grande partie ou sous-partie du plan DGFiP (dont les travaux d’inventaire), avec une question par définition de la sélection ;
 - difficulté maximale des textes à trous masquant tous les mots utiles et conservant seulement les mots de liaison ;
 - suivi local de la progression, cartes connues et cartes faibles ;
 - thème clair/sombre, interface mobile et fonctionnement hors ligne (PWA).
