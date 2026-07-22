@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DATA } from '../app/data.js';
+import { FORMULA_DETAILS } from '../app/formula-details.js';
 
 const root = path.resolve(import.meta.dirname, '..');
 const uniqueCount = (items) => new Set(items).size;
@@ -11,6 +12,8 @@ assert.equal(DATA.definitions.length, 300, 'Le lexique doit fournir 300 définit
 assert.equal(DATA.formulas.length, 43, 'Le formulaire doit contenir 43 formules au total.');
 assert.equal(DATA.formulas.filter((item) => !item.fundamental).length, 40, '40 formules doivent venir du formulaire de calcul.');
 assert.equal(DATA.formulas.filter((item) => item.fundamental).length, 3, '3 égalités doivent être fondamentales.');
+assert.equal(Object.keys(FORMULA_DETAILS).length, DATA.formulas.length, 'Chaque formule doit avoir une explication.');
+assert(DATA.formulas.every((item) => FORMULA_DETAILS[item.id]?.expandedExpression && FORMULA_DETAILS[item.id]?.explanation.length > 40), 'Chaque formule doit être écrite en toutes lettres et expliquée.');
 
 assert.equal(uniqueCount(DATA.lessons.map((item) => item.id)), DATA.lessons.length, 'Les identifiants de leçon doivent être uniques.');
 assert.equal(uniqueCount(DATA.definitions.map((item) => item.id)), DATA.definitions.length, 'Les identifiants de définition doivent être uniques.');
