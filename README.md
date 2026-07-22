@@ -8,8 +8,10 @@ Application de révision de la comptabilité et de l’analyse financière pour 
 - 59 leçons issues du manuel 2026 ;
 - 300 définitions réparties comme le lexique : 210 en comptabilité générale, 37 en comptabilité de gestion et 53 en analyse financière ;
 - 43 formules : 40 formules de calcul et 3 égalités comptables fondamentales ;
+- onglet d’explication des 43 formules, écrites sans abréviation avec le sens de chaque calcul ;
 - lecture vocale française avec sélection automatique de la meilleure voix disponible ;
-- flashcards, QCM dans les deux sens, textes à trous réglables de 1 à 5 trous et formules à trous ;
+- flashcards, QCM dans les deux sens, réponses libres, définitions complètes à l’écrit ou au micro, textes et formules à trous avec ou sans pastilles ;
+- difficulté maximale des textes à trous masquant tous les mots utiles et conservant seulement les mots de liaison ;
 - suivi local de la progression, cartes connues et cartes faibles ;
 - thème clair/sombre, interface mobile et fonctionnement hors ligne (PWA).
 
