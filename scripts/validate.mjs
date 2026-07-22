@@ -24,6 +24,11 @@ for (const [partId, expected] of Object.entries(expectedParts)) {
   assert.equal(DATA.definitions.filter((item) => item.partId === partId).length, expected, `Répartition incorrecte pour la partie ${partId}.`);
 }
 
+const expectedSections = { A1: 25, A2: 30, A3: 68, A4: 34, A5: 36, A6: 17, B1: 16, B2: 8, B3: 13, C1: 16, C2: 13, C3: 8, C4: 7, C5: 4, C6: 5 };
+for (const [sectionId, expected] of Object.entries(expectedSections)) {
+  assert.equal(DATA.definitions.filter((item) => item.sectionId === sectionId).length, expected, `Répartition incorrecte pour la sous-partie ${sectionId}.`);
+}
+
 const validParts = new Set(DATA.plan.map((part) => part.id));
 const validSections = new Set(DATA.plan.flatMap((part) => part.sections.map((section) => section.id)));
 const validTopics = new Set(DATA.plan.flatMap((part) => part.sections.flatMap((section) => section.topics.map((topic) => topic.id))));
@@ -41,5 +46,10 @@ assert(DATA.plan.every((part) => part.sections.every((section) => section.topics
 for (const file of ['index.html', 'styles.css', 'app.js', 'data.js', 'sw.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png']) {
   assert(fs.existsSync(path.join(root, 'app', file)), `Ressource PWA manquante : ${file}`);
 }
+
+const applicationSource = fs.readFileSync(path.join(root, 'app', 'app.js'), 'utf8');
+assert(!applicationSource.includes('<option value="5">5 questions</option>'), 'Le choix fixe 5/10/20 ne doit plus être proposé.');
+assert(applicationSource.includes('item.sectionId === scope'), 'Les sessions doivent pouvoir être filtrées par sous-partie.');
+assert(applicationSource.includes('items: shuffle(pool)'), 'Une session doit contenir toutes les définitions de la sélection.');
 
 console.log('Validation réussie : 59 leçons, 300 définitions, 43 formules et ressources PWA présentes.');
