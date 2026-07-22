@@ -398,6 +398,11 @@ main { grid-column: 2; grid-row: 2; min-width: 0; }
 .results-card p { color: var(--ink-soft); }
 
 .mobile-nav { display: none; }
+.field-label { font-weight: 700; }
+.automatic-question-count { display: flex; align-items: baseline; gap: 9px; min-height: 44px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); }
+.automatic-question-count strong { color: var(--accent); font-size: 1.35rem; line-height: 1; }
+.automatic-question-count span { color: var(--ink-soft); }
+.field-group small { color: var(--ink-soft); font-size: .78rem; }
 .toast-region { position: fixed; z-index: 100; right: 20px; bottom: 20px; display: grid; gap: 8px; }
 .toast { max-width: 360px; padding: 13px 16px; border: 1px solid var(--border); border-radius: 13px; background: var(--surface); box-shadow: var(--shadow); animation: toast-in 200ms ease; }
 @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } }
