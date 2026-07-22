@@ -30,7 +30,7 @@ Ouvrir ensuite `http://localhost:4173`.
 
 Le workflow `.github/workflows/pages.yml` publie automatiquement le dossier `app` sur GitHub Pages à chaque mise à jour de la branche `main`.
 
-Pour Cloudflare Pages : sélectionner ce dépôt, ne renseigner aucune commande de build et utiliser `app` comme dossier de sortie.
+Pour Cloudflare Pages : sélectionner ce dépôt, utiliser `npm run build` comme commande de build et `dist` comme dossier de sortie.
 
 ## Sources de contenu
 
