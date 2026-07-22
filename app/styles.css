@@ -291,6 +291,9 @@ main { grid-column: 2; grid-row: 2; min-width: 0; }
 .formula-count-banner strong { font: 650 2.5rem/1 'Fraunces', serif; }
 .formula-count-banner p { margin: 0; color: var(--ink-soft); }
 .formula-count-banner b { color: var(--ink); }
+.formula-tabs { display: inline-flex; max-width: 100%; margin-bottom: 20px; padding: 4px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-3); }
+.formula-tab { min-height: 41px; padding: 0 16px; border: 0; border-radius: 10px; background: transparent; color: var(--ink-soft); font-weight: 750; cursor: pointer; }
+.formula-tab.is-active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-soft); }
 .formula-groups { display: grid; gap: 24px; }
 .formula-group-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .formula-group-head h2 { margin: 0; font-size: 1.1rem; }
@@ -300,6 +303,12 @@ main { grid-column: 2; grid-row: 2; min-width: 0; }
 .formula-card-top { display: flex; justify-content: space-between; gap: 10px; }
 .formula-card h3 { margin: 0; font-size: .95rem; }
 .formula-expression { margin-top: 15px; padding: 15px; overflow-wrap: anywhere; border-radius: 12px; background: var(--surface-2); color: var(--ink); font: 600 1rem/1.6 'DM Sans', sans-serif; }
+.formula-detail-label { display: block; margin-top: 15px; color: var(--blue); font-size: .7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.formula-detail .formula-expression { margin-top: 6px; }
+.formula-expression.is-expanded { border-left: 4px solid var(--accent); font-size: .95rem; }
+.formula-terms { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.formula-terms span { padding: 6px 9px; border-radius: 999px; background: var(--blue-soft); color: var(--blue); font-size: .72rem; font-weight: 700; }
+.formula-detail p { margin: 13px 2px 0; color: var(--ink-soft); font-size: .85rem; line-height: 1.65; }
 .formula-path { margin-top: 12px; color: var(--ink-soft); font-size: .72rem; }
 
 .glossary-layout { display: grid; grid-template-columns: minmax(0, .9fr) minmax(310px, .62fr); gap: 20px; align-items: start; }
@@ -365,10 +374,21 @@ main { grid-column: 2; grid-row: 2; min-width: 0; }
 .blank-slot.is-filled { border-style: solid; background: var(--blue-soft); }
 .blank-slot.is-correct { border-color: var(--mint); background: var(--mint-soft); color: var(--mint); }
 .blank-slot.is-wrong { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.blank-input { width: clamp(120px, 28vw, 230px); min-height: 38px; padding: 4px 10px; border: 2px solid var(--blue); border-radius: 9px; background: var(--surface); color: var(--ink); font-size: .87rem; font-weight: 700; vertical-align: middle; }
+.blank-input.is-correct { border-color: var(--mint); background: var(--mint-soft); color: var(--mint); }
+.blank-input.is-wrong { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.cloze-free-hint { margin: 13px 2px 0; color: var(--ink-soft); font-size: .8rem; }
 .word-bank { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 17px; }
 .word-chip { padding: 9px 13px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); cursor: pointer; }
 .word-chip:hover:not(:disabled) { border-color: var(--blue); }
 .word-chip:disabled { opacity: .42; cursor: not-allowed; }
+
+.recall-card { display: grid; }
+.recall-input, .recall-textarea { width: 100%; padding: 14px 16px; border: 1px solid var(--border); border-radius: 13px; background: var(--surface-2); color: var(--ink); line-height: 1.6; resize: vertical; }
+.recall-input { min-height: 48px; }
+.recall-textarea { min-height: 180px; }
+.dictation-controls { display: flex; align-items: center; gap: 12px; margin-bottom: 13px; padding: 13px; border-radius: 13px; background: var(--blue-soft); }
+.dictation-controls span { color: var(--ink-soft); font-size: .78rem; }
 
 .empty-state { padding: 50px 24px; color: var(--ink-soft); text-align: center; }
 .empty-state strong { display: block; color: var(--ink); font-size: 1.1rem; }
@@ -440,7 +460,11 @@ main { grid-column: 2; grid-row: 2; min-width: 0; }
   .lesson-card-head { display: block; }
   .complete-button { width: 100%; margin-top: 15px; }
   .formula-count-banner { align-items: flex-start; }
+  .formula-tabs { display: grid; width: 100%; }
+  .formula-tab { width: 100%; }
   .quiz-card { padding: 22px 18px; }
+  .dictation-controls { align-items: stretch; flex-direction: column; }
+  .dictation-controls button { width: 100%; }
   .quiz-top { grid-template-columns: auto 1fr; }
   .quiz-top span { grid-column: 1 / -1; }
 }
