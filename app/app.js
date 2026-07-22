@@ -1,4 +1,5 @@
 import { DATA } from './data.js';
+import { FORMULA_DETAILS } from './formula-details.js';
 
 const STORAGE_KEY = 'comptamaster-ifip-state-v1';
 const defaultState = {
@@ -14,9 +15,11 @@ const defaultState = {
   glossarySearch: '',
   glossaryCardId: 'D001',
   formulaScope: 'all',
+  formulaTab: 'formulas',
   trainingMode: 'qcm-term',
   trainingScope: 'all',
   trainingHoles: 2,
+  trainingClozeAssistance: 'pills',
   voiceURI: '',
   voiceRate: 1,
 };
@@ -33,6 +36,7 @@ let deferredInstallPrompt = null;
 let speechQueue = [];
 let speechIndex = 0;
 let speechStatus = 'idle';
+let activeRecognition = null;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -288,9 +292,18 @@ const renderFormulas = () => {
       <div class="formula-group-head"><span>${items.length}</span><h2>${part.id}. ${escapeHTML(section.title)}</h2></div>
       <div class="formula-grid">${items.map((formula) => {
         const path = pathFor(formula);
+        const detail = FORMULA_DETAILS[formula.id];
+        const body = state.formulaTab === 'explanations'
+          ? `<div class="formula-detail">
+              <span class="formula-detail-label">En toutes lettres</span>
+              <div class="formula-expression is-expanded">${escapeHTML(detail.expandedExpression)}</div>
+              ${detail.terms.length ? `<div class="formula-terms">${detail.terms.map((term) => `<span>${escapeHTML(term)}</span>`).join('')}</div>` : ''}
+              <p>${escapeHTML(detail.explanation)}</p>
+            </div>`
+          : `<div class="formula-expression">${escapeHTML(formula.expression)}</div>`;
         return `<article class="formula-card">
           <div class="formula-card-top"><h3>${escapeHTML(formula.name)}</h3>${formula.fundamental ? '<span class="tag is-essential">Fondamentale</span>' : '<span class="tag">Calcul</span>'}</div>
-          <div class="formula-expression">${escapeHTML(formula.expression)}</div>
+          ${body}
           <div class="formula-path">${escapeHTML(path.topic.title)}</div>
         </article>`;
       }).join('')}</div>
@@ -303,10 +316,24 @@ const renderFormulas = () => {
       <div class="control-row"><select class="select-field" id="formula-scope" aria-label="Filtrer les formules">${formulaFilterOptions()}</select><button class="primary-button" id="practice-formulas" type="button">S’entraîner</button></div>
     </div>
     <div class="formula-count-banner"><strong>${DATA.meta.counts.formulas}</strong><p><b>formules à connaître au total</b><br />${DATA.meta.counts.calculationFormulas} formules de calcul du formulaire + 3 égalités comptables fondamentales.</p></div>
+    <div class="formula-tabs" role="tablist" aria-label="Présentation des formules">
+      <button class="formula-tab ${state.formulaTab === 'formulas' ? 'is-active' : ''}" id="formula-tab-formulas" data-formula-tab="formulas" role="tab" aria-selected="${state.formulaTab === 'formulas'}" type="button">Formules</button>
+      <button class="formula-tab ${state.formulaTab === 'explanations' ? 'is-active' : ''}" id="formula-tab-explanations" data-formula-tab="explanations" role="tab" aria-selected="${state.formulaTab === 'explanations'}" type="button">Sans abréviation + explications</button>
+    </div>
     <div class="formula-groups">${groups}</div>`;
   $('#formula-scope').value = state.formulaScope;
   $('#formula-scope').addEventListener('change', (event) => { state.formulaScope = event.target.value; saveState(); renderFormulas(); });
-  $('#practice-formulas').addEventListener('click', () => { state.trainingMode = 'formula-cloze'; saveState(); setView('training'); });
+  $$('[data-formula-tab]', $('#view-formulas')).forEach((button) => button.addEventListener('click', () => {
+    state.formulaTab = button.dataset.formulaTab;
+    saveState();
+    renderFormulas();
+  }));
+  $('#practice-formulas').addEventListener('click', () => {
+    trainingSession = null;
+    state.trainingMode = 'formula-cloze';
+    saveState();
+    setView('training');
+  });
 };
 
 const filteredDefinitions = () => {
@@ -362,7 +389,7 @@ const renderGlossary = () => {
         </div>` : '<div class="panel empty-state"><strong>Aucun résultat</strong>Essaie un autre mot ou une autre partie.</div>'}
       </section>
       <section class="panel glossary-results">
-        <div class="panel-head"><div><h2>Liste des notions</h2><p>${definitions.length} résultat${definitions.length > 1 ? 's' : ''}</p></div><button class="ghost-button" id="start-lexicon-quiz" type="button">Mode QCM</button></div>
+        <div class="panel-head"><div><h2>Liste des notions</h2><p>${definitions.length} résultat${definitions.length > 1 ? 's' : ''}</p></div><button class="ghost-button" id="start-lexicon-quiz" type="button">Exercices du lexique</button></div>
         <div class="definition-list">${definitions.map((definition) => `<article class="definition-row ${definition.id === current?.id ? 'is-active' : ''}" data-definition="${definition.id}" tabindex="0"><strong>${escapeHTML(definition.term)}</strong><p>${escapeHTML(definition.definition)}</p></article>`).join('')}</div>
       </section>
     </div>`;
@@ -375,7 +402,12 @@ const renderGlossary = () => {
     state.glossaryCardId = definitions[Math.floor(Math.random() * definitions.length)].id;
     saveState(); renderGlossary();
   });
-  $('#start-lexicon-quiz').addEventListener('click', () => { state.trainingMode = 'qcm-term'; saveState(); setView('training'); });
+  $('#start-lexicon-quiz').addEventListener('click', () => {
+    trainingSession = null;
+    state.trainingMode = 'qcm-term';
+    saveState();
+    setView('training');
+  });
   if (!current) return;
   $('#flashcard').addEventListener('click', (event) => event.currentTarget.classList.toggle('is-flipped'));
   const chooseCard = (targetIndex) => { const target = definitions[targetIndex]; if (target) { state.glossaryCardId = target.id; saveState(); renderGlossary(); } };
@@ -400,9 +432,12 @@ const renderGlossary = () => {
 
 const trainingModes = [
   { id: 'flashcards', icon: 'Aa', title: 'Flashcards', description: 'Révèle la définition et évalue ta maîtrise.' },
-  { id: 'qcm-term', icon: 'Q', title: 'Notion → définition', description: 'Choisis la bonne définition parmi quatre.' },
-  { id: 'qcm-definition', icon: '↔', title: 'Définition → notion', description: 'Retrouve le terme comptable correspondant.' },
+  { id: 'qcm-term', icon: 'Q', title: 'QCM · notion → définition', description: 'Choisis la bonne définition parmi quatre.' },
+  { id: 'qcm-definition', icon: '↔', title: 'QCM · définition → notion', description: 'Retrouve le terme comptable correspondant.' },
   { id: 'cloze', icon: '…', title: 'Texte à trous', description: 'Replace les mots manquants dans les définitions.' },
+  { id: 'written-definition', icon: '✎', title: 'Définition à écrire', description: 'Rédige entièrement la définition à partir de la notion.' },
+  { id: 'oral-definition', icon: '●', title: 'Définition à l’oral', description: 'Récite la définition au micro puis vérifie la transcription.' },
+  { id: 'free-term', icon: 'A?', title: 'Réponse libre · définition → notion', description: 'Écris toi-même la notion, sans proposition.' },
   { id: 'formula-cloze', icon: 'ƒ', title: 'Formules à trous', description: 'Reconstitue les formules essentielles.' },
   { id: 'weak', icon: '!', title: 'Cartes faibles', description: 'Révise uniquement les notions signalées.' },
 ];
@@ -416,7 +451,11 @@ const renderTraining = () => {
     <div class="training-options">
       <div class="field-group"><label for="training-scope">Partie à réviser</label><select id="training-scope"><option value="all">Tout le programme</option>${DATA.plan.map((part) => `<option value="${part.id}">${part.id}. ${escapeHTML(part.title)}</option>`).join('')}</select></div>
       <div class="field-group"><label for="training-length">Nombre de questions</label><select id="training-length"><option value="5">5 questions</option><option value="10" selected>10 questions</option><option value="20">20 questions</option></select></div>
-      <div class="field-group" id="holes-group" ${holesVisible ? '' : 'hidden'}><label for="training-holes">Nombre de trous</label><select id="training-holes">${[1,2,3,4,5].map((number) => `<option value="${number}" ${Number(state.trainingHoles) === number ? 'selected' : ''}>${number} trou${number > 1 ? 's' : ''}</option>`).join('')}</select></div>
+      <div class="field-group" id="holes-group" ${holesVisible ? '' : 'hidden'}><label for="training-holes">Difficulté du texte à trous</label><select id="training-holes">
+        ${[1,2,3,4,5].map((number) => `<option value="${number}" ${String(state.trainingHoles) === String(number) ? 'selected' : ''}>${number} trou${number > 1 ? 's' : ''}${number === 1 ? ' · facile' : number === 3 ? ' · moyen' : number === 5 ? ' · difficile' : ''}</option>`).join('')}
+        <option value="max" ${String(state.trainingHoles) === 'max' ? 'selected' : ''}>Maximum · tous les mots utiles</option>
+      </select></div>
+      <div class="field-group" id="cloze-assistance-group" ${holesVisible ? '' : 'hidden'}><label for="training-cloze-assistance">Mode de réponse</label><select id="training-cloze-assistance"><option value="pills" ${state.trainingClozeAssistance === 'pills' ? 'selected' : ''}>Avec pastilles · mots proposés</option><option value="typing" ${state.trainingClozeAssistance === 'typing' ? 'selected' : ''}>Sans pastilles · réponse libre</option></select></div>
       <button class="primary-button" id="start-training" type="button">Commencer la session</button>
     </div>`;
   $('#training-scope').value = state.trainingScope;
@@ -425,7 +464,8 @@ const renderTraining = () => {
     saveState(); renderTraining();
   }));
   $('#training-scope').addEventListener('change', (event) => { state.trainingScope = event.target.value; saveState(); });
-  $('#training-holes')?.addEventListener('change', (event) => { state.trainingHoles = Number(event.target.value); saveState(); });
+  $('#training-holes')?.addEventListener('change', (event) => { state.trainingHoles = event.target.value; saveState(); });
+  $('#training-cloze-assistance')?.addEventListener('change', (event) => { state.trainingClozeAssistance = event.target.value; saveState(); });
   $('#start-training').addEventListener('click', () => startTraining(Number($('#training-length').value)));
 };
 
@@ -448,6 +488,7 @@ const startTraining = (length) => {
     score: 0,
     answered: false,
     currentCloze: null,
+    clozeAssistance: state.trainingClozeAssistance,
   };
   renderTrainingQuestion();
 };
@@ -474,6 +515,7 @@ const recordAnswer = (correct, definitionId = null) => {
 };
 
 const nextTrainingQuestion = () => {
+  stopRecognition();
   const session = trainingSession;
   session.index += 1;
   session.answered = false;
@@ -487,12 +529,19 @@ const renderTrainingQuestion = () => {
   if (!session) { renderTraining(); return; }
   if (session.mode === 'flashcards') renderTrainingFlashcard();
   else if (session.mode === 'qcm-term' || session.mode === 'qcm-definition') renderQCM();
-  else renderCloze();
+  else if (session.mode === 'cloze' || session.mode === 'formula-cloze') renderCloze();
+  else renderDefinitionRecall();
+};
+
+const stopRecognition = () => {
+  if (!activeRecognition) return;
+  try { activeRecognition.stop(); } catch { /* La reconnaissance était déjà arrêtée. */ }
+  activeRecognition = null;
 };
 
 const questionShell = (content) => {
   $('#view-training').innerHTML = `<div class="quiz-shell">${sessionProgress()}${content}<div class="quiz-actions"><button class="secondary-button" id="quit-training" type="button">Quitter</button></div></div>`;
-  $('#quit-training').addEventListener('click', () => { trainingSession = null; renderTraining(); });
+  $('#quit-training').addEventListener('click', () => { stopRecognition(); trainingSession = null; renderTraining(); });
 };
 
 const renderTrainingFlashcard = () => {
@@ -542,60 +591,220 @@ const renderQCM = () => {
   $('#next-question').addEventListener('click', nextTrainingQuestion);
 };
 
-const stopWords = new Set('avec dans pour sans sous entre cette comme elles leurs alors selon ainsi après avant avoir être sont plus moins même chaque dont lors peut fait afin puis tout tous toute très sur des les une aux du de la le et ou un en au se sa son ses qui que'.split(' '));
-const candidateWords = (text) => unique((text.match(/[A-Za-zÀ-ÖØ-öø-ÿŒœ]{5,}/g) || []).filter((word) => !stopWords.has(normalize(word))));
+const stopWords = new Set('a à afin ainsi alors après au aucun aussi aux avant avec car ce ces cet cette comme d dans de des donc du elle elles en entre est et eux il ils je l la le les leur leurs lui mais me même mes moi moins mon ne ni nos notre nous on ont ou où par parce pas peut plus pour puis qu que quel quelle quels quelles qui sa sans se selon ses si son sont sous sur ta te tes toi ton tous tout toute toutes très tu un une vos votre vous y'.split(' '));
+const wordTokens = (text) => text.match(/[A-Za-zÀ-ÖØ-öø-ÿŒœ0-9]+/g) || [];
+const candidateWords = (text) => unique(wordTokens(text).filter((word) => !stopWords.has(normalize(word))));
+const normalizedRecall = (value) => normalize(value)
+  .replace(/[^a-z0-9œ\s]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const definitionCoverage = (expected, answer) => {
+  const expectedWords = wordTokens(normalizedRecall(expected)).filter((word) => !stopWords.has(word));
+  const answerCounts = wordTokens(normalizedRecall(answer)).reduce((counts, word) => {
+    counts.set(word, (counts.get(word) || 0) + 1);
+    return counts;
+  }, new Map());
+  let matched = 0;
+  expectedWords.forEach((word) => {
+    const remaining = answerCounts.get(word) || 0;
+    if (remaining > 0) {
+      matched += 1;
+      answerCounts.set(word, remaining - 1);
+    }
+  });
+  return expectedWords.length ? Math.round((matched / expectedWords.length) * 100) : 0;
+};
+
+const bindDictation = () => {
+  const button = $('#start-dictation');
+  const status = $('#dictation-status');
+  const answer = $('#recall-answer');
+  if (!button || !status || !answer) return;
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) {
+    button.disabled = true;
+    status.textContent = 'La dictée vocale n’est pas disponible dans ce navigateur. Tu peux utiliser le micro du clavier ou écrire la réponse.';
+    return;
+  }
+  button.addEventListener('click', () => {
+    if (activeRecognition) {
+      stopRecognition();
+      button.textContent = '● Reprendre la dictée';
+      status.textContent = 'Dictée mise en pause.';
+      return;
+    }
+    const recognition = new Recognition();
+    let finalTranscript = answer.value.trim();
+    recognition.lang = 'fr-FR';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = (event) => {
+      let interimTranscript = '';
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const transcript = event.results[index][0].transcript.trim();
+        if (event.results[index].isFinal) finalTranscript = `${finalTranscript} ${transcript}`.trim();
+        else interimTranscript = transcript;
+      }
+      answer.value = `${finalTranscript} ${interimTranscript}`.trim();
+      answer.dispatchEvent(new Event('input'));
+    };
+    recognition.onerror = (event) => {
+      status.textContent = event.error === 'not-allowed'
+        ? 'Autorise le micro dans les réglages du navigateur pour utiliser la récitation orale.'
+        : 'La dictée a été interrompue. Tu peux la reprendre ou corriger la transcription à la main.';
+    };
+    recognition.onend = () => {
+      if (activeRecognition === recognition) activeRecognition = null;
+      button.textContent = '● Reprendre la dictée';
+      if (!status.textContent.includes('Autorise')) status.textContent = 'Dictée arrêtée. Relis la transcription avant de vérifier.';
+    };
+    activeRecognition = recognition;
+    button.textContent = '■ Arrêter la dictée';
+    status.textContent = 'Écoute en cours… récite la définition naturellement.';
+    try { recognition.start(); }
+    catch { status.textContent = 'Le micro est déjà actif. Réessaie dans un instant.'; }
+  });
+};
+
+const renderDefinitionRecall = () => {
+  const session = trainingSession;
+  const item = session.items[session.index];
+  const oral = session.mode === 'oral-definition';
+  const reverse = session.mode === 'free-term';
+  const expected = reverse ? item.term : item.definition;
+  const prompt = reverse ? item.definition : item.term;
+  const promptLabel = reverse ? 'Écris la notion qui correspond à cette définition' : oral ? 'Récite entièrement la définition de cette notion' : 'Écris entièrement la définition de cette notion';
+  const answerField = reverse
+    ? '<input class="recall-input" id="recall-answer" type="text" autocomplete="off" placeholder="Écris la notion comptable…" />'
+    : '<textarea class="recall-textarea" id="recall-answer" rows="7" placeholder="Rédige ou dicte la définition complète…"></textarea>';
+  questionShell(`<section class="panel quiz-card recall-card">
+    <span class="quiz-label">${escapeHTML(promptLabel)}</span>
+    <div class="quiz-question ${reverse ? 'is-definition' : ''}">${escapeHTML(prompt)}</div>
+    ${oral ? '<div class="dictation-controls"><button class="secondary-button" id="start-dictation" type="button">● Commencer la dictée</button><span id="dictation-status">Le navigateur demandera l’autorisation d’utiliser le micro.</span></div>' : ''}
+    ${answerField}
+    <div class="feedback-box" id="recall-feedback"></div>
+    <div class="quiz-actions"><button class="secondary-button" id="clear-recall" type="button">Effacer</button><button class="primary-button" id="check-recall" type="button" disabled>Vérifier</button><button class="primary-button" id="next-question" type="button" hidden>Question suivante</button></div>
+  </section>`);
+  const answer = $('#recall-answer');
+  answer.addEventListener('input', () => { $('#check-recall').disabled = !answer.value.trim(); });
+  $('#clear-recall').addEventListener('click', () => { answer.value = ''; answer.dispatchEvent(new Event('input')); answer.focus(); });
+  if (oral) bindDictation();
+  $('#check-recall').addEventListener('click', () => {
+    if (session.answered) return;
+    stopRecognition();
+    session.answered = true;
+    const coverage = reverse ? (normalizedRecall(answer.value) === normalizedRecall(expected) ? 100 : 0) : definitionCoverage(expected, answer.value);
+    const correct = reverse ? coverage === 100 : coverage >= 90;
+    if (correct) session.score += 1;
+    recordAnswer(correct, item.id);
+    answer.disabled = true;
+    $('#check-recall').hidden = true;
+    $('#clear-recall').hidden = true;
+    $('#start-dictation')?.setAttribute('hidden', '');
+    const feedback = $('#recall-feedback');
+    feedback.className = `feedback-box is-visible ${correct ? 'is-correct' : 'is-wrong'}`;
+    feedback.innerHTML = reverse
+      ? `<strong>${correct ? 'Exact.' : 'Correction'}</strong><p>${escapeHTML(item.term)}</p>`
+      : `<strong>${correct ? `Définition maîtrisée · ${coverage} % des mots essentiels retrouvés` : `À revoir · ${coverage} % des mots essentiels retrouvés`}</strong><p><b>Définition complète :</b> ${escapeHTML(item.definition)}</p>`;
+    $('#next-question').hidden = false;
+  });
+  $('#next-question').addEventListener('click', nextTrainingQuestion);
+};
 
 const makeCloze = (item, formulaMode) => {
   const source = formulaMode ? item.expression : item.definition;
-  let candidates = formulaMode ? item.tokens.filter((token) => normalize(token) !== normalize(item.name)) : candidateWords(source);
-  candidates = unique(candidates).filter((token) => normalize(source).includes(normalize(token)));
-  const answers = shuffle(candidates).slice(0, Math.min(state.trainingHoles, candidates.length));
-  let marked = source;
-  answers.sort((a, b) => b.length - a.length).forEach((answer, index) => {
-    const escaped = answer.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    marked = marked.replace(new RegExp(escaped, 'i'), `@@${index}@@`);
-  });
-  const parts = marked.split(/(@@\d+@@)/g).map((part) => {
-    const match = part.match(/^@@(\d+)@@$/);
-    return match ? { slot: Number(match[1]) } : { text: part };
-  });
+  const maximum = String(state.trainingHoles) === 'max';
+  const holeCount = maximum ? Number.POSITIVE_INFINITY : Number(state.trainingHoles) || 2;
+  let answers;
+  let parts;
+  if (formulaMode) {
+    let candidates = item.tokens.filter((token) => normalize(token) !== normalize(item.name));
+    candidates = unique(candidates).filter((token) => normalize(source).includes(normalize(token)));
+    answers = maximum ? candidates : shuffle(candidates).slice(0, Math.min(holeCount, candidates.length));
+    let marked = source;
+    answers = [...answers].sort((a, b) => b.length - a.length);
+    answers.forEach((answer, index) => {
+      const escaped = answer.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      marked = marked.replace(new RegExp(escaped, 'i'), `@@${index}@@`);
+    });
+    parts = marked.split(/(@@\d+@@)/g).map((part) => {
+      const match = part.match(/^@@(\d+)@@$/);
+      return match ? { slot: Number(match[1]) } : { text: part };
+    });
+  } else {
+    const sourceParts = source.match(/[A-Za-zÀ-ÖØ-öø-ÿŒœ0-9]+|[^A-Za-zÀ-ÖØ-öø-ÿŒœ0-9]+/g) || [source];
+    const eligibleIndexes = sourceParts
+      .map((part, index) => ({ part, index }))
+      .filter(({ part }) => /^[A-Za-zÀ-ÖØ-öø-ÿŒœ0-9]+$/.test(part) && !stopWords.has(normalize(part)))
+      .map(({ index }) => index);
+    const chosenIndexes = maximum ? eligibleIndexes : shuffle(eligibleIndexes).slice(0, Math.min(holeCount, eligibleIndexes.length));
+    const chosen = new Set(chosenIndexes);
+    answers = [];
+    parts = sourceParts.map((part, index) => {
+      if (!chosen.has(index)) return { text: part };
+      const slot = answers.length;
+      answers.push(part);
+      return { slot };
+    });
+  }
   const otherPool = formulaMode
     ? DATA.formulas.flatMap((formula) => formula.tokens)
-    : DATA.definitions.flatMap((definition) => candidateWords(definition.definition).slice(0, 3));
-  const distractors = shuffle(otherPool.filter((word) => !answers.some((answer) => normalize(answer) === normalize(word)))).slice(0, Math.max(2, answers.length));
-  return { source, answers, parts, bank: shuffle([...answers, ...distractors]), selected: Array(answers.length).fill(null) };
+    : DATA.definitions.flatMap((definition) => candidateWords(definition.definition).slice(0, 4));
+  const distractorCount = maximum ? Math.min(8, Math.max(2, Math.ceil(answers.length / 4))) : Math.max(2, answers.length);
+  const distractors = shuffle(otherPool.filter((word) => !answers.some((answer) => normalize(answer) === normalize(word)))).slice(0, distractorCount);
+  return { source, answers, parts, bank: shuffle([...answers, ...distractors]), selected: Array(answers.length).fill(null), usedBankIndexes: [] };
 };
 
 const renderCloze = () => {
   const session = trainingSession;
   const item = session.items[session.index];
   const formulaMode = session.mode === 'formula-cloze';
+  const withPills = session.clozeAssistance !== 'typing';
   if (!session.currentCloze) session.currentCloze = makeCloze(item, formulaMode);
   const cloze = session.currentCloze;
-  const text = cloze.parts.map((part) => part.text !== undefined ? escapeHTML(part.text) : `<span class="blank-slot" data-slot="${part.slot}">${cloze.selected[part.slot] ? escapeHTML(cloze.selected[part.slot]) : `trou ${part.slot + 1}`}</span>`).join('');
+  const text = cloze.parts.map((part) => {
+    if (part.text !== undefined) return escapeHTML(part.text);
+    if (withPills) return `<span class="blank-slot" data-slot="${part.slot}">${cloze.selected[part.slot] ? escapeHTML(cloze.selected[part.slot]) : `trou ${part.slot + 1}`}</span>`;
+    return `<input class="blank-input" data-slot="${part.slot}" type="text" value="${escapeHTML(cloze.selected[part.slot] || '')}" placeholder="réponse ${part.slot + 1}" aria-label="Réponse du trou ${part.slot + 1}" autocomplete="off" />`;
+  }).join('');
+  const answerHelp = withPills
+    ? `<div class="word-bank">${cloze.bank.map((word, index) => `<button class="word-chip" data-word-index="${index}" type="button" ${cloze.usedBankIndexes.includes(index) ? 'disabled' : ''}>${escapeHTML(word)}</button>`).join('')}</div>`
+    : '<p class="cloze-free-hint">Écris directement chaque mot ou groupe de mots manquant, sans proposition.</p>';
   questionShell(`<section class="panel quiz-card">
-    <span class="quiz-label">${formulaMode ? `Complète la formule · ${escapeHTML(item.name)}` : `Complète la définition · ${escapeHTML(item.term)}`}</span>
+    <span class="quiz-label">${formulaMode ? `Complète la formule · ${escapeHTML(item.name)}` : `Complète la définition · ${escapeHTML(item.term)}`} · ${withPills ? 'avec pastilles' : 'sans pastilles'}</span>
     <div class="cloze-text">${text}</div>
-    <div class="word-bank">${cloze.bank.map((word, index) => `<button class="word-chip" data-word-index="${index}" type="button" ${cloze.selected.includes(word) ? 'disabled' : ''}>${escapeHTML(word)}</button>`).join('')}</div>
+    ${answerHelp}
     <div class="feedback-box" id="cloze-feedback"></div>
     <div class="quiz-actions"><button class="secondary-button" id="clear-cloze" type="button">Effacer</button><button class="primary-button" id="check-cloze" type="button" ${cloze.selected.some((word) => !word) ? 'disabled' : ''}>Vérifier</button><button class="primary-button" id="next-question" type="button" hidden>Question suivante</button></div>
   </section>`);
   $$('[data-word-index]').forEach((button) => button.addEventListener('click', () => {
     const empty = cloze.selected.findIndex((value) => !value);
     if (empty < 0) return;
-    cloze.selected[empty] = cloze.bank[Number(button.dataset.wordIndex)];
+    const bankIndex = Number(button.dataset.wordIndex);
+    cloze.selected[empty] = cloze.bank[bankIndex];
+    cloze.usedBankIndexes.push(bankIndex);
     renderCloze();
   }));
-  $('#clear-cloze').addEventListener('click', () => { cloze.selected = Array(cloze.answers.length).fill(null); renderCloze(); });
+  $$('[data-slot].blank-input').forEach((input) => input.addEventListener('input', () => {
+    cloze.selected[Number(input.dataset.slot)] = input.value;
+    $('#check-cloze').disabled = cloze.selected.some((word) => !String(word || '').trim());
+  }));
+  $('#clear-cloze').addEventListener('click', () => {
+    cloze.selected = Array(cloze.answers.length).fill(null);
+    cloze.usedBankIndexes = [];
+    renderCloze();
+  });
   $('#check-cloze').addEventListener('click', () => {
     if (session.answered) return;
     session.answered = true;
-    const correct = cloze.answers.every((answer, index) => normalize(answer) === normalize(cloze.selected[index] || ''));
+    const correct = cloze.answers.every((answer, index) => normalize(answer).trim() === normalize(cloze.selected[index] || '').trim());
     if (correct) session.score += 1;
     recordAnswer(correct, formulaMode ? null : item.id);
     $$('[data-slot]').forEach((slot) => {
       const index = Number(slot.dataset.slot);
-      slot.classList.add(normalize(cloze.answers[index]) === normalize(cloze.selected[index] || '') ? 'is-correct' : 'is-wrong');
+      slot.classList.add(normalize(cloze.answers[index]).trim() === normalize(cloze.selected[index] || '').trim() ? 'is-correct' : 'is-wrong');
+      if (slot.matches('input')) slot.disabled = true;
     });
     $$('[data-word-index]').forEach((button) => { button.disabled = true; });
     $('#check-cloze').hidden = true;
