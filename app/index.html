@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#17233d" />
+    <meta name="description" content="Cours, lexique et exercices de comptabilité selon le plan officiel DGFiP." />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <link rel="stylesheet" href="./styles.css" />
+    <title>ComptaMaster IFIP</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Aller au contenu</a>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Navigation principale">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">CM</div>
+          <div>
+            <strong>ComptaMaster</strong>
+            <span>Objectif IFIP</span>
+          </div>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item is-active" data-view="dashboard" type="button">
+            <span aria-hidden="true">⌂</span><span>Tableau de bord</span>
+          </button>
+          <button class="nav-item" data-view="course" type="button">
+            <span aria-hidden="true">▤</span><span>Cours</span>
+          </button>
+          <button class="nav-item" data-view="formulas" type="button">
+            <span aria-hidden="true">ƒ</span><span>Formules</span>
+          </button>
+          <button class="nav-item" data-view="glossary" type="button">
+            <span aria-hidden="true">Aa</span><span>Lexique</span>
+          </button>
+          <button class="nav-item" data-view="training" type="button">
+            <span aria-hidden="true">✓</span><span>Entraînement</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-card">
+          <div class="sidebar-card-top">
+            <span>Progression</span><strong id="side-progress-label">0 %</strong>
+          </div>
+          <div class="progress-track"><span id="side-progress-bar"></span></div>
+          <small id="side-progress-detail">Commence une leçon pour lancer le suivi.</small>
+        </div>
+
+        <p class="sidebar-source">Plan officiel DGFiP<br />Comptabilité et analyse financière</p>
+      </aside>
+
+      <header class="topbar">
+        <button class="icon-button mobile-menu" id="menu-button" type="button" aria-label="Ouvrir le menu" aria-expanded="false">☰</button>
+        <div class="topbar-title">
+          <span id="view-eyebrow">Révision comptable</span>
+          <strong id="view-title">Tableau de bord</strong>
+        </div>
+        <div class="topbar-actions">
+          <button class="secondary-button install-button" id="install-button" type="button" hidden>Installer</button>
+          <button class="icon-button" id="theme-button" type="button" aria-label="Activer le thème sombre">☾</button>
+        </div>
+      </header>
+
+      <main id="main-content" tabindex="-1">
+        <section class="view is-visible" id="view-dashboard" data-page-title="Tableau de bord"></section>
+        <section class="view" id="view-course" data-page-title="Cours"></section>
+        <section class="view" id="view-formulas" data-page-title="Formules"></section>
+        <section class="view" id="view-glossary" data-page-title="Lexique"></section>
+        <section class="view" id="view-training" data-page-title="Entraînement"></section>
+      </main>
+
+      <nav class="mobile-nav" aria-label="Navigation mobile">
+        <button class="is-active" data-view="dashboard" type="button"><span>⌂</span><small>Accueil</small></button>
+        <button data-view="course" type="button"><span>▤</span><small>Cours</small></button>
+        <button data-view="formulas" type="button"><span>ƒ</span><small>Formules</small></button>
+        <button data-view="glossary" type="button"><span>Aa</span><small>Lexique</small></button>
+        <button data-view="training" type="button"><span>✓</span><small>Exercices</small></button>
+      </nav>
+    </div>
+
+    <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">ComptaMaster</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#24365d"/>
+      <stop offset="1" stop-color="#121a2e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffbd45"/>
+      <stop offset="1" stop-color="#f58d53"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="118" fill="url(#bg)"/>
+  <path d="M113 122h286v268H113z" fill="#fff" opacity=".08"/>
+  <path d="M147 156h218v28H147zm0 58h124v24H147zm0 54h218v24H147zm0 54h92v24h-92z" fill="#fff" opacity=".9"/>
+  <circle cx="328" cy="334" r="72" fill="url(#accent)"/>
+  <path d="M292 334l23 23 49-57" fill="none" stroke="#17233d" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
