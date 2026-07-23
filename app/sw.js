@@ -1,4 +1,4 @@
-const CACHE_NAME = 'comptamaster-v3';
+const CACHE_NAME = 'comptamaster-v4';
 const APP_SHELL = [
   './',
   './index.html',
