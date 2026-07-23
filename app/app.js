@@ -519,8 +519,9 @@ const renderFormulas = () => {
   $('#practice-formulas').addEventListener('click', () => {
     trainingSession = null;
     state.trainingMode = 'formula-cloze';
+    state.trainingScope = state.formulaScope;
     saveState();
-    setView('training');
+    setView('formula-training');
   });
 };
 
@@ -625,7 +626,7 @@ const renderGlossary = () => {
   });
 };
 
-const trainingModes = [
+const lexiconTrainingModes = [
   { id: 'flashcards', icon: 'Aa', title: 'Flashcards', description: 'Révèle la définition et évalue ta maîtrise.' },
   { id: 'qcm-term', icon: 'Q', title: 'QCM · notion → définition', description: 'Choisis la bonne définition parmi quatre.' },
   { id: 'qcm-definition', icon: '↔', title: 'QCM · définition → notion', description: 'Retrouve le terme comptable correspondant.' },
@@ -633,7 +634,6 @@ const trainingModes = [
   { id: 'written-definition', icon: '✎', title: 'Définition à écrire', description: 'Rédige entièrement la définition à partir de la notion.' },
   { id: 'oral-definition', icon: '●', title: 'Définition à l’oral', description: 'Récite la définition au micro puis vérifie la transcription.' },
   { id: 'free-term', icon: 'A?', title: 'Réponse libre · définition → notion', description: 'Écris toi-même la notion, sans proposition.' },
-  { id: 'formula-cloze', icon: 'ƒ', title: 'Formules à trous', description: 'Reconstitue les formules essentielles.' },
   { id: 'weak', icon: '!', title: 'Cartes faibles', description: 'Révise uniquement les notions signalées.' },
 ];
 
@@ -671,15 +671,20 @@ const trainingScopeName = (scope = state.trainingScope) => {
 };
 
 const renderTraining = () => {
+  if (trainingSession?.mode === 'formula-cloze') trainingSession = null;
+  $('#view-formula-training').innerHTML = '';
+  if (!lexiconTrainingModes.some((mode) => mode.id === state.trainingMode)) {
+    state.trainingMode = 'qcm-term';
+    saveState();
+  }
   if (trainingSession) { renderTrainingQuestion(); return; }
-  const holesVisible = ['cloze', 'formula-cloze'].includes(state.trainingMode);
+  const holesVisible = state.trainingMode === 'cloze';
   const pool = trainingPool();
-  const formulaMode = state.trainingMode === 'formula-cloze';
-  const unit = formulaMode ? 'formule' : state.trainingMode === 'weak' ? 'carte faible' : 'définition';
+  const unit = state.trainingMode === 'weak' ? 'carte faible' : 'définition';
   const selectedName = trainingScopeName();
   $('#view-training').innerHTML = `
-    <div class="page-heading"><div><span class="eyebrow">Rappel actif</span><h1>Entraînement</h1><p>Choisis un mode et une partie ou sous-partie du programme DGFiP.</p></div></div>
-    <div class="training-setup">${trainingModes.map((mode) => `<button class="mode-card ${mode.id === state.trainingMode ? 'is-selected' : ''}" data-mode="${mode.id}" type="button"><span class="mode-icon">${mode.icon}</span><h3>${mode.title}</h3><p>${mode.description}</p></button>`).join('')}</div>
+    <div class="page-heading"><div><span class="eyebrow">Rappel actif · 300 définitions</span><h1>Entraînement du lexique</h1><p>Choisis un exercice et une partie ou sous-partie du programme DGFiP.</p></div></div>
+    <div class="training-setup">${lexiconTrainingModes.map((mode) => `<button class="mode-card ${mode.id === state.trainingMode ? 'is-selected' : ''}" data-mode="${mode.id}" type="button"><span class="mode-icon">${mode.icon}</span><h3>${mode.title}</h3><p>${mode.description}</p></button>`).join('')}</div>
     <div class="training-options">
       <div class="field-group"><label for="training-scope">Partie ou sous-partie à réviser</label><select id="training-scope">${trainingScopeOptions()}</select></div>
       <div class="field-group"><span class="field-label">Nombre de questions</span><div class="automatic-question-count"><strong>${pool.length}</strong><span>${unit}${pool.length > 1 ? 's' : ''} dans ${escapeHTML(selectedName)}</span></div><small>Chaque ${unit} sera proposée une fois.</small></div>
@@ -699,6 +704,42 @@ const renderTraining = () => {
   $('#training-holes')?.addEventListener('change', (event) => { state.trainingHoles = event.target.value; saveState(); });
   $('#training-cloze-assistance')?.addEventListener('change', (event) => { state.trainingClozeAssistance = event.target.value; saveState(); });
   $('#start-training').addEventListener('click', startTraining);
+};
+
+const renderFormulaTraining = () => {
+  if (trainingSession && trainingSession.mode !== 'formula-cloze') trainingSession = null;
+  $('#view-training').innerHTML = '';
+  if (state.trainingMode !== 'formula-cloze') {
+    state.trainingMode = 'formula-cloze';
+    saveState();
+  }
+  if (trainingSession) { renderTrainingQuestion(); return; }
+  const pool = trainingPool('formula-cloze', state.trainingScope);
+  const selectedName = trainingScopeName();
+  $('#view-formula-training').innerHTML = `
+    <div class="page-heading">
+      <div><span class="eyebrow">Rappel actif · 43 formules</span><h1>Entraînement des formules</h1><p>Une page indépendante du lexique, consacrée uniquement aux formules à trous.</p></div>
+      <button class="secondary-button" id="back-to-formulas" type="button">← Revoir les formules</button>
+    </div>
+    <div class="training-setup">
+      <div class="mode-card is-selected"><span class="mode-icon">ƒ</span><h3>Formules à trous</h3><p>Reconstitue les formules essentielles, avec ou sans mots proposés.</p></div>
+    </div>
+    <div class="training-options">
+      <div class="field-group"><label for="formula-training-scope">Partie ou sous-partie à réviser</label><select id="formula-training-scope">${trainingScopeOptions('formula-cloze')}</select></div>
+      <div class="field-group"><span class="field-label">Nombre de questions</span><div class="automatic-question-count"><strong>${pool.length}</strong><span>formule${pool.length > 1 ? 's' : ''} dans ${escapeHTML(selectedName)}</span></div><small>Chaque formule sera proposée une fois.</small></div>
+      <div class="field-group"><label for="formula-training-holes">Difficulté du texte à trous</label><select id="formula-training-holes">
+        ${[1,2,3,4,5].map((number) => `<option value="${number}" ${String(state.trainingHoles) === String(number) ? 'selected' : ''}>${number} trou${number > 1 ? 's' : ''}${number === 1 ? ' · facile' : number === 3 ? ' · moyen' : number === 5 ? ' · difficile' : ''}</option>`).join('')}
+        <option value="max" ${String(state.trainingHoles) === 'max' ? 'selected' : ''}>Maximum · tous les éléments utiles</option>
+      </select></div>
+      <div class="field-group"><label for="formula-training-assistance">Mode de réponse</label><select id="formula-training-assistance"><option value="pills" ${state.trainingClozeAssistance === 'pills' ? 'selected' : ''}>Avec pastilles · éléments proposés</option><option value="typing" ${state.trainingClozeAssistance === 'typing' ? 'selected' : ''}>Sans pastilles · réponse libre</option></select></div>
+      <button class="primary-button" id="start-formula-training" type="button" ${pool.length ? '' : 'disabled'}>Commencer les ${pool.length} formule${pool.length > 1 ? 's' : ''}</button>
+    </div>`;
+  $('#formula-training-scope').value = state.trainingScope;
+  $('#formula-training-scope').addEventListener('change', (event) => { state.trainingScope = event.target.value; saveState(); renderFormulaTraining(); });
+  $('#formula-training-holes').addEventListener('change', (event) => { state.trainingHoles = event.target.value; saveState(); });
+  $('#formula-training-assistance').addEventListener('change', (event) => { state.trainingClozeAssistance = event.target.value; saveState(); });
+  $('#start-formula-training').addEventListener('click', startTraining);
+  $('#back-to-formulas').addEventListener('click', () => setView('formulas'));
 };
 
 const startTraining = () => {
@@ -788,7 +829,11 @@ const nextTrainingQuestion = () => {
 
 const renderTrainingQuestion = () => {
   const session = trainingSession;
-  if (!session) { renderTraining(); return; }
+  if (!session) {
+    if (currentView === 'formula-training') renderFormulaTraining();
+    else renderTraining();
+    return;
+  }
   if (session.mode === 'flashcards') renderTrainingFlashcard();
   else if (session.mode === 'qcm-term' || session.mode === 'qcm-definition') renderQCM();
   else if (session.mode === 'cloze' || session.mode === 'formula-cloze') renderCloze();
@@ -802,8 +847,15 @@ const stopRecognition = () => {
 };
 
 const questionShell = (content) => {
-  $('#view-training').innerHTML = `<div class="quiz-shell">${sessionProgress()}${content}<div class="quiz-actions"><button class="secondary-button" id="quit-training" type="button">Quitter</button></div></div>`;
-  $('#quit-training').addEventListener('click', () => { stopRecognition(); trainingSession = null; renderTraining(); });
+  const formulaSession = trainingSession?.mode === 'formula-cloze';
+  const root = $(formulaSession ? '#view-formula-training' : '#view-training');
+  root.innerHTML = `<div class="quiz-shell">${sessionProgress()}${content}<div class="quiz-actions"><button class="secondary-button" id="quit-training" type="button">Quitter</button></div></div>`;
+  $('#quit-training', root).addEventListener('click', () => {
+    stopRecognition();
+    trainingSession = null;
+    if (formulaSession) renderFormulaTraining();
+    else renderTraining();
+  });
 };
 
 const renderTrainingFlashcard = () => {
@@ -1081,14 +1133,20 @@ const renderCloze = () => {
 
 const renderTrainingResults = () => {
   const session = trainingSession;
+  const formulaSession = session.mode === 'formula-cloze';
   if (!session.reviewLogged) {
     unique(session.items.map((item) => item.topicId).filter(Boolean)).forEach((topicId) => markTopicReviewed(topicId));
     session.reviewLogged = true;
   }
   const percent = Math.round((session.score / session.items.length) * 100);
-  $('#view-training').innerHTML = `<section class="panel results-card"><div class="results-score">${percent}%</div><span class="eyebrow">Session terminée</span><h2>${session.score} bonne${session.score > 1 ? 's' : ''} réponse${session.score > 1 ? 's' : ''} sur ${session.items.length}</h2><p>${percent >= 80 ? 'Très solide. Tu peux avancer ou augmenter le nombre de trous.' : percent >= 60 ? 'La base est là. Une seconde session fixera les hésitations.' : 'Les erreurs sont maintenant identifiées : révise les cartes faibles puis recommence.'}</p><div class="control-row" style="justify-content:center"><button class="secondary-button" id="back-training" type="button">Changer de mode</button><button class="primary-button" id="restart-training" type="button">Recommencer</button></div></section>`;
-  $('#back-training').addEventListener('click', () => { trainingSession = null; renderTraining(); });
-  $('#restart-training').addEventListener('click', () => { trainingSession = null; startTraining(); });
+  const root = $(formulaSession ? '#view-formula-training' : '#view-training');
+  root.innerHTML = `<section class="panel results-card"><div class="results-score">${percent}%</div><span class="eyebrow">Session terminée</span><h2>${session.score} bonne${session.score > 1 ? 's' : ''} réponse${session.score > 1 ? 's' : ''} sur ${session.items.length}</h2><p>${percent >= 80 ? 'Très solide. Tu peux avancer ou augmenter le nombre de trous.' : percent >= 60 ? 'La base est là. Une seconde session fixera les hésitations.' : 'Les erreurs sont maintenant identifiées : révise les cartes faibles puis recommence.'}</p><div class="control-row" style="justify-content:center"><button class="secondary-button" id="back-training" type="button">${formulaSession ? 'Modifier les réglages' : 'Changer de mode'}</button><button class="primary-button" id="restart-training" type="button">Recommencer</button></div></section>`;
+  $('#back-training', root).addEventListener('click', () => {
+    trainingSession = null;
+    if (formulaSession) renderFormulaTraining();
+    else renderTraining();
+  });
+  $('#restart-training', root).addEventListener('click', () => { trainingSession = null; startTraining(); });
 };
 
 const progressScopeOptions = () => `<option value="all">Tout le programme</option>${DATA.plan.map((part) => `
@@ -1291,7 +1349,7 @@ const bindRevisionActions = (root) => {
     state.trainingScope = topicId;
     state.trainingMode = kind === 'formula' ? 'formula-cloze' : 'qcm-term';
     saveState();
-    setView('training');
+    setView(kind === 'formula' ? 'formula-training' : 'training');
   }));
 };
 
@@ -1498,18 +1556,20 @@ const renderView = (view) => {
   if (view === 'dashboard') renderDashboard();
   if (view === 'course') renderCourse();
   if (view === 'formulas') renderFormulas();
+  if (view === 'formula-training') renderFormulaTraining();
   if (view === 'glossary') renderGlossary();
   if (view === 'training') renderTraining();
   if (view === 'progress') renderProgress();
 };
 
 const setView = (view, updateHash = true) => {
-  const allowed = ['dashboard', 'course', 'formulas', 'glossary', 'training', 'progress'];
+  const allowed = ['dashboard', 'course', 'formulas', 'formula-training', 'glossary', 'training', 'progress'];
   if (!allowed.includes(view)) view = 'dashboard';
   if (currentView === 'course' && view !== 'course') stopSpeech();
   currentView = view;
   $$('.view').forEach((section) => section.classList.toggle('is-visible', section.id === `view-${view}`));
-  $$('[data-view]').forEach((button) => button.classList.toggle('is-active', button.dataset.view === view));
+  const navigationView = view === 'formula-training' ? 'formulas' : view;
+  $$('[data-view]').forEach((button) => button.classList.toggle('is-active', button.dataset.view === navigationView));
   const title = $(`#view-${view}`).dataset.pageTitle;
   $('#view-title').textContent = title;
   document.title = `${title} · ComptaMaster IFIP`;
