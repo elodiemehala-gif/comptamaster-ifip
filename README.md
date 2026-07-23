@@ -12,8 +12,12 @@ Application de révision de la comptabilité et de l’analyse financière pour 
 - lecture vocale française avec sélection automatique de la meilleure voix disponible ;
 - flashcards, QCM dans les deux sens, réponses libres, définitions complètes à l’écrit ou au micro, textes et formules à trous avec ou sans pastilles ;
 - entraînement au choix sur chaque grande partie ou sous-partie du plan DGFiP (dont les travaux d’inventaire), avec une question par définition de la sélection ;
+- sélection possible jusqu’à chaque rubrique précise du plan (par exemple A.5.1 « Objet de l’inventaire »), avec ses totaux exacts ;
 - difficulté maximale des textes à trous masquant tous les mots utiles et conservant seulement les mots de liaison ;
-- suivi local de la progression, cartes connues et cartes faibles ;
+- suivi local détaillé de chaque leçon, définition et formule, avec niveau par rubrique, erreurs, répétitions et prochaine révision ;
+- auto-évaluation facultative sur 5, corrigée par les résultats réels dans le niveau ajusté ;
+- notes personnelles enregistrées pour chaque rubrique ;
+- agenda journalier adaptatif, limité à six priorités et recalculé après chaque résultat ;
 - thème clair/sombre, interface mobile et fonctionnement hors ligne (PWA).
 
 ## Lancer localement
