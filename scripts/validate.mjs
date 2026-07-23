@@ -29,6 +29,12 @@ for (const [sectionId, expected] of Object.entries(expectedSections)) {
   assert.equal(DATA.definitions.filter((item) => item.sectionId === sectionId).length, expected, `Répartition incorrecte pour la sous-partie ${sectionId}.`);
 }
 
+const inventoryObjectTopic = DATA.plan.flatMap((part) => part.sections.flatMap((section) => section.topics)).find((topic) => topic.id === 'A5a');
+assert(inventoryObjectTopic, 'La rubrique A5a doit exister.');
+assert.equal(new Set(inventoryObjectTopic.lessons).size, 1, 'A5a doit contenir exactement 1 leçon.');
+assert.equal(DATA.definitions.filter((item) => item.topicId === 'A5a').length, 4, 'A5a doit contenir exactement 4 définitions.');
+assert.equal(DATA.formulas.filter((item) => item.topicId === 'A5a').length, 0, 'A5a ne doit contenir aucune formule.');
+
 const validParts = new Set(DATA.plan.map((part) => part.id));
 const validSections = new Set(DATA.plan.flatMap((part) => part.sections.map((section) => section.id)));
 const validTopics = new Set(DATA.plan.flatMap((part) => part.sections.flatMap((section) => section.topics.map((topic) => topic.id))));
@@ -50,6 +56,11 @@ for (const file of ['index.html', 'styles.css', 'app.js', 'data.js', 'sw.js', 'm
 const applicationSource = fs.readFileSync(path.join(root, 'app', 'app.js'), 'utf8');
 assert(!applicationSource.includes('<option value="5">5 questions</option>'), 'Le choix fixe 5/10/20 ne doit plus être proposé.');
 assert(applicationSource.includes('item.sectionId === scope'), 'Les sessions doivent pouvoir être filtrées par sous-partie.');
+assert(applicationSource.includes('item.topicId === scope'), 'Les sessions doivent pouvoir être filtrées par rubrique précise.');
 assert(applicationSource.includes('items: shuffle(pool)'), 'Une session doit contenir toutes les définitions de la sélection.');
+assert(applicationSource.includes('topicNotes'), 'Le suivi doit permettre des notes personnelles par rubrique.');
+assert(applicationSource.includes('topicRatings'), 'Le suivi doit conserver une auto-évaluation par rubrique.');
+assert(applicationSource.includes('buildDailyAgenda'), 'L’agenda journalier adaptatif doit être présent.');
+assert(applicationSource.includes('const limit = 6'), 'L’agenda doit limiter la charge quotidienne à six rubriques.');
 
-console.log('Validation réussie : 59 leçons, 300 définitions, 43 formules et ressources PWA présentes.');
+console.log('Validation réussie : contenus, suivi détaillé, rubriques ciblées et agenda journalier présents.');
