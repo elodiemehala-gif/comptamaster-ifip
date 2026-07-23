@@ -18,7 +18,9 @@ Application de révision de la comptabilité et de l’analyse financière pour 
 - auto-évaluation facultative sur 5, corrigée par les résultats réels dans le niveau ajusté ;
 - notes personnelles enregistrées pour chaque rubrique ;
 - agenda journalier adaptatif, limité à six priorités et recalculé après chaque résultat ;
-- thème clair/sombre, interface mobile et fonctionnement hors ligne (PWA).
+- thème clair/sombre et interface mobile ;
+- PWA hors ligne pour le navigateur ;
+- application Android autonome : contenus intégrés dans l’APK, aucun accès Internet demandé, voix et dictée locales.
 
 ## Lancer localement
 
@@ -43,3 +45,15 @@ Pour Cloudflare Pages : sélectionner ce dépôt, utiliser `npm run build` comme
 - *Lexique essentiel - Comptabilité et analyse financière - Référentiel français 2026*.
 
 Les données sont embarquées dans l’application : elles restent disponibles hors connexion et ne sont envoyées à aucun serveur.
+
+## Application Android autonome
+
+Le dossier `android` transforme la même interface en application Android indépendante du site. L’APK :
+
+- embarque les cours, le lexique, les formules et les exercices ;
+- ne déclare volontairement aucune permission d’accès à Internet ;
+- conserve la progression, les notes et l’agenda dans le stockage privé de l’application ;
+- utilise la voix française Android installée sur le téléphone ;
+- demande le micro uniquement lorsque la dictée est lancée et privilégie la reconnaissance hors connexion.
+
+Le workflow « Construire l’application Android » vérifie l’ensemble puis produit le fichier `ComptaMaster-IFIP.apk`, installable directement sur un téléphone Android sans publication sur le Play Store.

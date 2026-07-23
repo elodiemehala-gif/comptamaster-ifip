@@ -1,0 +1,5 @@
+.gradle/
+local.properties
+**/build/
+app/src/main/assets/public/
+app/src/main/res/drawable/app_icon.png

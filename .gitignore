@@ -1,5 +1,9 @@
 tmp/
 upload/
 node_modules/
+android/.gradle/
+android/local.properties
+android/**/build/
+android/app/src/main/assets/public/
+android/app/src/main/res/drawable/app_icon.png
 .DS_Store
-
