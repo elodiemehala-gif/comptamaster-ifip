@@ -65,6 +65,8 @@ let speechQueue = [];
 let speechIndex = 0;
 let speechStatus = 'idle';
 let activeRecognition = null;
+let nativeDictationContext = null;
+const nativeBridge = window.AndroidBridge || null;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -842,7 +844,12 @@ const renderTrainingQuestion = () => {
 
 const stopRecognition = () => {
   if (!activeRecognition) return;
-  try { activeRecognition.stop(); } catch { /* La reconnaissance était déjà arrêtée. */ }
+  if (activeRecognition === 'native') {
+    try { nativeBridge?.stopDictation(); } catch { /* La reconnaissance était déjà arrêtée. */ }
+    nativeDictationContext = null;
+  } else {
+    try { activeRecognition.stop(); } catch { /* La reconnaissance était déjà arrêtée. */ }
+  }
   activeRecognition = null;
 };
 
@@ -935,6 +942,32 @@ const bindDictation = () => {
   const status = $('#dictation-status');
   const answer = $('#recall-answer');
   if (!button || !status || !answer) return;
+  if (nativeBridge) {
+    button.addEventListener('click', () => {
+      if (activeRecognition === 'native') {
+        stopRecognition();
+        button.textContent = '● Reprendre la dictée';
+        status.textContent = 'Dictée mise en pause.';
+        return;
+      }
+      nativeDictationContext = {
+        answer,
+        button,
+        status,
+        initialText: answer.value.trim(),
+      };
+      activeRecognition = 'native';
+      button.textContent = '■ Arrêter la dictée';
+      status.textContent = 'Préparation du micro hors connexion…';
+      try { nativeBridge.startDictation(); }
+      catch {
+        activeRecognition = null;
+        nativeDictationContext = null;
+        status.textContent = 'La dictée locale n’a pas pu démarrer. Tu peux écrire la réponse.';
+      }
+    });
+    return;
+  }
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Recognition) {
     button.disabled = true;
@@ -1507,6 +1540,16 @@ const speakNext = () => {
     updateAudioStatus('Lecture terminée');
     return;
   }
+  if (nativeBridge) {
+    try {
+      nativeBridge.speak(speechQueue[speechIndex], Number(state.voiceRate) || 1);
+      updateAudioStatus(`Lecture hors connexion ${speechIndex + 1} / ${speechQueue.length}`);
+    } catch {
+      speechStatus = 'idle';
+      updateAudioStatus('La voix française hors connexion est indisponible');
+    }
+    return;
+  }
   const utterance = new SpeechSynthesisUtterance(speechQueue[speechIndex]);
   const voices = frenchVoices();
   utterance.voice = voices.find((voice) => voice.voiceURI === state.voiceURI) || voices[0] || null;
@@ -1520,8 +1563,12 @@ const speakNext = () => {
 };
 
 const stopSpeech = () => {
-  if (!window.speechSynthesis) return;
-  speechSynthesis.cancel();
+  if (nativeBridge) {
+    try { nativeBridge.stopSpeech(); } catch { /* La lecture était déjà arrêtée. */ }
+  } else {
+    if (!window.speechSynthesis) return;
+    speechSynthesis.cancel();
+  }
   speechQueue = [];
   speechIndex = 0;
   speechStatus = 'idle';
@@ -1529,6 +1576,42 @@ const stopSpeech = () => {
 };
 
 const bindAudio = (lesson) => {
+  if (nativeBridge) {
+    const select = $('#voice-select');
+    const voiceLabel = (() => {
+      try { return nativeBridge.getVoiceLabel() || 'Voix française Android hors connexion'; }
+      catch { return 'Voix française Android hors connexion'; }
+    })();
+    select.innerHTML = `<option>${escapeHTML(voiceLabel)}</option>`;
+    select.disabled = true;
+    $('#rate-select').addEventListener('change', (event) => {
+      state.voiceRate = Number(event.target.value);
+      saveState();
+      stopSpeech();
+      updateAudioStatus('Vitesse enregistrée');
+    });
+    $('#audio-play').addEventListener('click', () => {
+      if (speechStatus === 'paused') {
+        speechStatus = 'playing';
+        speakNext();
+        return;
+      }
+      stopSpeech();
+      speechQueue = speechChunks(`${lesson.title}. ${lesson.content}`);
+      speechIndex = 0;
+      speechStatus = 'playing';
+      speakNext();
+    });
+    $('#audio-pause').addEventListener('click', () => {
+      if (speechStatus !== 'playing') return;
+      try { nativeBridge.stopSpeech(); } catch { /* La lecture était déjà arrêtée. */ }
+      speechStatus = 'paused';
+      updateAudioStatus('Lecture en pause');
+    });
+    $('#audio-stop').addEventListener('click', stopSpeech);
+    updateAudioStatus('Voix française Android · fonctionnement hors connexion');
+    return;
+  }
   if (!window.speechSynthesis) {
     updateAudioStatus('Lecture vocale non prise en charge par ce navigateur');
     $$('.audio-buttons button').forEach((button) => { button.disabled = true; });
@@ -1597,8 +1680,58 @@ const bindShell = () => {
     deferredInstallPrompt.prompt(); await deferredInstallPrompt.userChoice;
     deferredInstallPrompt = null; $('#install-button').hidden = true;
   });
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+  if (!nativeBridge && 'serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
   if (window.speechSynthesis) speechSynthesis.onvoiceschanged = populateVoices;
+};
+
+window.ComptaNative = {
+  onSpeechEnd() {
+    if (speechStatus !== 'playing') return;
+    speechIndex += 1;
+    speakNext();
+  },
+  onSpeechError(message = 'Lecture vocale interrompue') {
+    speechStatus = 'idle';
+    updateAudioStatus(message);
+  },
+  onTtsReady(label = 'Voix française Android hors connexion') {
+    const select = $('#voice-select');
+    if (select && nativeBridge) select.innerHTML = `<option>${escapeHTML(label)}</option>`;
+    updateAudioStatus('Voix française Android · fonctionnement hors connexion');
+  },
+  onDictationReady() {
+    if (nativeDictationContext) nativeDictationContext.status.textContent = 'Écoute hors connexion en cours… récite la définition.';
+  },
+  onDictationPartial(transcript = '') {
+    if (!nativeDictationContext) return;
+    const { answer, initialText } = nativeDictationContext;
+    answer.value = `${initialText} ${transcript}`.trim();
+    answer.dispatchEvent(new Event('input'));
+  },
+  onDictationFinal(transcript = '') {
+    if (!nativeDictationContext) return;
+    const { answer, initialText, status, button } = nativeDictationContext;
+    answer.value = `${initialText} ${transcript}`.trim();
+    answer.dispatchEvent(new Event('input'));
+    status.textContent = 'Dictée terminée. Relis la transcription avant de vérifier.';
+    button.textContent = '● Reprendre la dictée';
+    activeRecognition = null;
+    nativeDictationContext = null;
+  },
+  onDictationError(message = 'La dictée locale a été interrompue.') {
+    if (!nativeDictationContext) return;
+    nativeDictationContext.status.textContent = message;
+    nativeDictationContext.button.textContent = '● Réessayer la dictée';
+    activeRecognition = null;
+    nativeDictationContext = null;
+  },
+  onDictationEnd() {
+    if (!nativeDictationContext) return;
+    nativeDictationContext.status.textContent = 'Dictée arrêtée. Relis la transcription avant de vérifier.';
+    nativeDictationContext.button.textContent = '● Reprendre la dictée';
+    activeRecognition = null;
+    nativeDictationContext = null;
+  },
 };
 
 setTheme(state.theme);
