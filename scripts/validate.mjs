@@ -62,5 +62,15 @@ assert(applicationSource.includes('topicNotes'), 'Le suivi doit permettre des no
 assert(applicationSource.includes('topicRatings'), 'Le suivi doit conserver une auto-évaluation par rubrique.');
 assert(applicationSource.includes('buildDailyAgenda'), 'L’agenda journalier adaptatif doit être présent.');
 assert(applicationSource.includes('const limit = 6'), 'L’agenda doit limiter la charge quotidienne à six rubriques.');
+assert(applicationSource.includes('const lexiconTrainingModes'), 'Les exercices du lexique doivent avoir leur propre liste de modes.');
+const lexiconModesSource = applicationSource.slice(
+  applicationSource.indexOf('const lexiconTrainingModes'),
+  applicationSource.indexOf('const trainingSource'),
+);
+assert(!lexiconModesSource.includes('formula-cloze'), 'Les formules ne doivent plus apparaître parmi les exercices du lexique.');
+assert(applicationSource.includes('const renderFormulaTraining'), 'Une page d’entraînement dédiée aux formules doit exister.');
+assert(applicationSource.includes("setView('formula-training')"), 'Le bouton des formules doit ouvrir leur page d’entraînement dédiée.');
+const indexSource = fs.readFileSync(path.join(root, 'app', 'index.html'), 'utf8');
+assert(indexSource.includes('id="view-formula-training"'), 'La page dédiée à l’entraînement des formules doit être déclarée.');
 
-console.log('Validation réussie : contenus, suivi détaillé, rubriques ciblées et agenda journalier présents.');
+console.log('Validation réussie : contenus, entraînements séparés, suivi détaillé et agenda journalier présents.');
