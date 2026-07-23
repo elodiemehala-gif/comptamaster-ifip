@@ -1,0 +1,71 @@
+name: Construire l’application Android
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "android/**"
+      - "scripts/prepare-android-assets.mjs"
+      - "scripts/validate-android.mjs"
+      - "package.json"
+      - ".github/workflows/android-apk.yml"
+  pull_request:
+    paths:
+      - "app/**"
+      - "android/**"
+      - "scripts/prepare-android-assets.mjs"
+      - "scripts/validate-android.mjs"
+      - "package.json"
+      - ".github/workflows/android-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: Vérifier et créer l’APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le projet
+        uses: actions/checkout@v4
+
+      - name: Configurer Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configurer Android
+        uses: android-actions/setup-android@v4
+
+      - name: Installer la plateforme Android
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Configurer Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Vérifier les contenus et le mode autonome
+        run: |
+          npm test
+          npm run test:android
+
+      - name: Embarquer les contenus dans l’application
+        run: npm run build:android-assets
+
+      - name: Construire l’APK
+        run: gradle --no-daemon -p android assembleDebug
+
+      - name: Préparer le fichier d’installation
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk ComptaMaster-IFIP.apk
+
+      - name: Conserver l’APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ComptaMaster-IFIP-Android
+          path: ComptaMaster-IFIP.apk
+          if-no-files-found: error
+          retention-days: 30
