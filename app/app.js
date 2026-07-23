@@ -20,12 +20,40 @@ const defaultState = {
   trainingScope: 'all',
   trainingHoles: 2,
   trainingClozeAssistance: 'pills',
+  reviewStats: {
+    lesson: {},
+    definition: {},
+    formula: {},
+  },
+  topicNotes: {},
+  topicRatings: {},
+  topicReviewLog: {},
+  agendaDone: {},
+  progressTab: 'recap',
+  progressScope: 'all',
+  progressFilter: 'all',
+  progressOpenTopics: ['A5a'],
   voiceURI: '',
   voiceRate: 1,
 };
 
 const loadState = () => {
-  try { return { ...defaultState, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') }; }
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    return {
+      ...defaultState,
+      ...saved,
+      reviewStats: {
+        lesson: { ...defaultState.reviewStats.lesson, ...(saved.reviewStats?.lesson || {}) },
+        definition: { ...defaultState.reviewStats.definition, ...(saved.reviewStats?.definition || {}) },
+        formula: { ...defaultState.reviewStats.formula, ...(saved.reviewStats?.formula || {}) },
+      },
+      topicNotes: { ...defaultState.topicNotes, ...(saved.topicNotes || {}) },
+      topicRatings: { ...defaultState.topicRatings, ...(saved.topicRatings || {}) },
+      topicReviewLog: { ...defaultState.topicReviewLog, ...(saved.topicReviewLog || {}) },
+      agendaDone: { ...defaultState.agendaDone, ...(saved.agendaDone || {}) },
+    };
+  }
   catch { return { ...defaultState }; }
 };
 
@@ -55,6 +83,28 @@ const shuffle = (array) => {
 };
 const unique = (array) => [...new Set(array)];
 const clamp = (number, min, max) => Math.max(min, Math.min(max, number));
+const localDateKey = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+const dateFromKey = (key) => {
+  const [year, month, day] = String(key).split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1, 12);
+};
+const addDays = (key, days) => {
+  const date = dateFromKey(key);
+  date.setDate(date.getDate() + days);
+  return localDateKey(date);
+};
+const formatDay = (key, options = {}) => new Intl.DateTimeFormat('fr-FR', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  ...options,
+}).format(dateFromKey(key));
+const todayKey = () => localDateKey(new Date());
 
 const getPart = (id) => DATA.plan.find((part) => part.id === id);
 const getSection = (id) => DATA.plan.flatMap((part) => part.sections).find((section) => section.id === id);
@@ -63,7 +113,137 @@ const getLesson = (id) => DATA.lessons.find((lesson) => lesson.id === id);
 const getDefinition = (id) => DATA.definitions.find((definition) => definition.id === id);
 const pathFor = (item) => ({ part: getPart(item.partId), section: getSection(item.sectionId), topic: getTopic(item.topicId) });
 const isCompleted = (id) => state.completedLessons.includes(id);
-const isInScope = (item, scope) => scope === 'all' || item.partId === scope || item.sectionId === scope;
+const isInScope = (item, scope) => scope === 'all' || item.partId === scope || item.sectionId === scope || item.topicId === scope;
+
+const allTopics = () => DATA.plan.flatMap((part) => part.sections.flatMap((section) => section.topics.map((topic, topicIndex) => ({
+  ...topic,
+  part,
+  section,
+  topicIndex,
+}))));
+
+const topicReference = (topic) => {
+  const part = DATA.plan.find((item) => item.sections.some((section) => section.topics.some((candidate) => candidate.id === topic.id)));
+  const sectionIndex = part?.sections.findIndex((section) => section.topics.some((candidate) => candidate.id === topic.id)) ?? 0;
+  const section = part?.sections[sectionIndex];
+  const topicIndex = section?.topics.findIndex((candidate) => candidate.id === topic.id) ?? 0;
+  return `${part?.id || ''}.${sectionIndex + 1}.${topicIndex + 1}`;
+};
+
+const topicContent = (topicId) => {
+  const topic = getTopic(topicId);
+  if (!topic) return { lessons: [], definitions: [], formulas: [] };
+  return {
+    lessons: unique(topic.lessons).map(getLesson).filter(Boolean),
+    definitions: DATA.definitions.filter((item) => item.topicId === topicId),
+    formulas: DATA.formulas.filter((item) => item.topicId === topicId),
+  };
+};
+
+const itemReviewStat = (kind, id) => state.reviewStats?.[kind]?.[id] || null;
+
+const itemMastery = (kind, item) => {
+  if (kind === 'lesson') return isCompleted(item.id) ? 100 : 0;
+  const stat = itemReviewStat(kind, item.id);
+  let value = 0;
+  if (stat?.attempts) {
+    const accuracy = (stat.correct / stat.attempts) * 100;
+    value = Math.round((accuracy * 0.82) + Math.min(18, (stat.streak || 0) * 6));
+  }
+  if (kind === 'definition') {
+    if (state.knownDefinitions.includes(item.id)) value = Math.max(value, 90);
+    if (state.weakDefinitions.includes(item.id)) value = Math.min(value || 25, 35);
+  }
+  return clamp(value, 0, 100);
+};
+
+const itemStatus = (kind, item) => {
+  const mastery = itemMastery(kind, item);
+  if (mastery >= 80) return { id: 'mastered', label: 'Maîtrisé' };
+  const stat = itemReviewStat(kind, item.id);
+  const explicitlyWeak = kind === 'definition' && state.weakDefinitions.includes(item.id);
+  if (stat?.attempts || explicitlyWeak) return { id: 'review', label: 'À revoir' };
+  return { id: 'new', label: 'À découvrir' };
+};
+
+const topicStats = (topicId) => {
+  const content = topicContent(topicId);
+  const category = (kind, items) => {
+    const values = items.map((item) => itemMastery(kind, item));
+    const mastered = values.filter((value) => value >= 80).length;
+    return {
+      count: items.length,
+      mastered,
+      percent: values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null,
+    };
+  };
+  const lessons = category('lesson', content.lessons);
+  const definitions = category('definition', content.definitions);
+  const formulas = category('formula', content.formulas);
+  const values = [
+    ...content.lessons.map((item) => itemMastery('lesson', item)),
+    ...content.definitions.map((item) => itemMastery('definition', item)),
+    ...content.formulas.map((item) => itemMastery('formula', item)),
+  ];
+  const automatic = values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
+  const ratingRecord = state.topicRatings[topicId];
+  const rating = Number(ratingRecord?.score ?? ratingRecord ?? 0);
+  const adjusted = rating ? Math.round((automatic * 0.8) + ((rating * 20) * 0.2)) : automatic;
+  const reviewItems = [
+    ...content.lessons.filter((item) => itemStatus('lesson', item).id !== 'mastered').map((item) => ({ kind: 'lesson', item })),
+    ...content.definitions.filter((item) => itemStatus('definition', item).id !== 'mastered').map((item) => ({ kind: 'definition', item })),
+    ...content.formulas.filter((item) => itemStatus('formula', item).id !== 'mastered').map((item) => ({ kind: 'formula', item })),
+  ];
+  const activityDates = [
+    state.topicReviewLog[topicId],
+    ratingRecord?.updatedAt,
+    ...Object.entries(content).flatMap(([plural, items]) => {
+      const kind = plural === 'lessons' ? 'lesson' : plural === 'definitions' ? 'definition' : 'formula';
+      return items.map((item) => itemReviewStat(kind, item.id)?.lastReviewed);
+    }),
+  ].filter(Boolean).sort();
+  return {
+    content,
+    lessons,
+    definitions,
+    formulas,
+    automatic,
+    rating,
+    adjusted,
+    reviewItems,
+    lastActivity: activityDates.at(-1) || '',
+  };
+};
+
+const topicDueInfo = (topicId) => {
+  const stats = topicStats(topicId);
+  const today = todayKey();
+  const individualDates = [
+    ...stats.content.definitions.map((item) => itemReviewStat('definition', item.id)?.nextReview),
+    ...stats.content.formulas.map((item) => itemReviewStat('formula', item.id)?.nextReview),
+  ].filter(Boolean).sort();
+  const hasWeakItem = stats.content.definitions.some((item) => state.weakDefinitions.includes(item.id));
+  const interval = stats.adjusted < 35 ? 1 : stats.adjusted < 55 ? 2 : stats.adjusted < 75 ? 4 : stats.adjusted < 90 ? 7 : 14;
+  const activityKey = stats.lastActivity ? localDateKey(new Date(stats.lastActivity)) : '';
+  let dueDate = activityKey ? addDays(activityKey, interval) : today;
+  if (individualDates.length && individualDates[0] < dueDate) dueDate = individualDates[0];
+  if (hasWeakItem && activityKey !== today) dueDate = today;
+  const hasActivity = Boolean(stats.lastActivity || stats.automatic || stats.rating);
+  const priority = !hasActivity ? 'soon' : hasWeakItem || stats.adjusted < 35 ? 'urgent' : stats.adjusted < 70 ? 'soon' : 'maintain';
+  return {
+    ...stats,
+    dueDate,
+    isDue: dueDate <= today,
+    priority,
+    hasActivity,
+  };
+};
+
+const globalMastery = () => {
+  const topics = allTopics();
+  const values = topics.map((topic) => topicStats(topic.id).adjusted);
+  return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
+};
 
 const toast = (message) => {
   const region = $('#toast-region');
@@ -75,10 +255,13 @@ const toast = (message) => {
 };
 
 const updateProgressUI = () => {
-  const percent = Math.round((state.completedLessons.length / DATA.lessons.length) * 100);
+  const percent = globalMastery();
+  const dueCount = buildDailyAgenda().dueTotal;
   $('#side-progress-label').textContent = `${percent} %`;
   $('#side-progress-bar').style.width = `${percent}%`;
-  $('#side-progress-detail').textContent = `${state.completedLessons.length} leçon${state.completedLessons.length > 1 ? 's' : ''} terminée${state.completedLessons.length > 1 ? 's' : ''} sur ${DATA.lessons.length}.`;
+  $('#side-progress-detail').textContent = dueCount
+    ? `${dueCount} rubrique${dueCount > 1 ? 's' : ''} prioritaire${dueCount > 1 ? 's' : ''} à revoir.`
+    : 'Aucune révision prioritaire aujourd’hui.';
 };
 
 const setTheme = (theme) => {
@@ -94,14 +277,13 @@ const setTheme = (theme) => {
 const renderDashboard = () => {
   const completed = new Set(state.completedLessons);
   const nextLesson = DATA.lessons.find((lesson) => !completed.has(lesson.id)) || DATA.lessons[0];
-  const nextPath = pathFor(nextLesson);
   const accuracy = state.answered ? Math.round((state.correct / state.answered) * 100) : 0;
-  const percent = Math.round((completed.size / DATA.lessons.length) * 100);
+  const percent = globalMastery();
+  const agenda = buildDailyAgenda();
 
   const partRows = DATA.plan.map((part) => {
-    const lessonIds = unique(part.sections.flatMap((section) => section.topics.flatMap((topic) => topic.lessons)));
-    const count = lessonIds.filter((id) => completed.has(id)).length;
-    const value = Math.round((count / lessonIds.length) * 100) || 0;
+    const topicValues = part.sections.flatMap((section) => section.topics.map((topic) => topicStats(topic.id).adjusted));
+    const value = topicValues.length ? Math.round(topicValues.reduce((sum, score) => sum + score, 0) / topicValues.length) : 0;
     return `<div class="plan-progress-row">
       <strong>${escapeHTML(part.id)}. ${escapeHTML(part.title)}</strong>
       <div class="light-track"><span style="width:${value}%"></span></div>
@@ -118,6 +300,7 @@ const renderDashboard = () => {
         <div class="hero-actions">
           <button class="primary-button" id="resume-course" type="button">Reprendre le cours</button>
           <button class="ghost-button" data-go="training" type="button">Lancer un exercice</button>
+          <button class="ghost-button" data-go="progress" type="button">Voir mon suivi précis</button>
         </div>
       </div>
       <div class="hero-visual" aria-hidden="true">
@@ -127,24 +310,20 @@ const renderDashboard = () => {
       </div>
     </div>
     <div class="stats-grid">
-      <article class="stat-card"><span class="stat-label">Cours maîtrisé</span><strong class="stat-value">${percent} %</strong><small>${completed.size} / ${DATA.lessons.length} leçons</small></article>
+      <article class="stat-card"><span class="stat-label">Maîtrise globale</span><strong class="stat-value">${percent} %</strong><small>niveau ajusté sur chaque rubrique</small></article>
       <article class="stat-card" style="--card-tint:var(--mint-soft)"><span class="stat-label">Lexique connu</span><strong class="stat-value">${state.knownDefinitions.length}</strong><small>sur ${DATA.definitions.length} notions</small></article>
       <article class="stat-card" style="--card-tint:var(--accent-soft)"><span class="stat-label">Précision</span><strong class="stat-value">${accuracy} %</strong><small>${state.answered} réponse${state.answered > 1 ? 's' : ''} donnée${state.answered > 1 ? 's' : ''}</small></article>
-      <article class="stat-card" style="--card-tint:var(--danger-soft)"><span class="stat-label">À revoir</span><strong class="stat-value">${state.weakDefinitions.length}</strong><small>carte${state.weakDefinitions.length > 1 ? 's' : ''} signalée${state.weakDefinitions.length > 1 ? 's' : ''}</small></article>
+      <article class="stat-card" style="--card-tint:var(--danger-soft)"><span class="stat-label">Agenda du jour</span><strong class="stat-value">${agenda.tasks.length}</strong><small>${agenda.backlog ? `+ ${agenda.backlog} en attente` : 'priorités calculées automatiquement'}</small></article>
     </div>
     <div class="dashboard-grid">
       <section class="panel">
-        <div class="panel-head"><div><h2>Avancement par partie</h2><p>Selon l’architecture exacte du programme.</p></div><span class="tag">DGFiP</span></div>
+        <div class="panel-head"><div><h2>Avancement par partie</h2><p>Cours, définitions et formules réunis.</p></div><button class="ghost-button" data-go="progress" type="button">Détail par sous-partie</button></div>
         <div class="plan-progress-list">${partRows}</div>
       </section>
       <section class="panel">
-        <div class="panel-head"><div><h2>Prochaine étape</h2><p>Continue là où le parcours t’attend.</p></div></div>
-        <div class="continue-card">
-          <span class="tag is-essential">${escapeHTML(nextLesson.id)} · indispensable</span>
-          <h3>${escapeHTML(nextLesson.title)}</h3>
-          <p>${escapeHTML(nextPath.section?.title || '')}</p>
-          <button class="primary-button" id="open-next-lesson" type="button">Ouvrir la leçon</button>
-        </div>
+        <div class="panel-head"><div><h2>À revoir aujourd’hui</h2><p>${escapeHTML(formatDay(todayKey()))}</p></div><span class="tag is-essential">${agenda.tasks.length} tâche${agenda.tasks.length > 1 ? 's' : ''}</span></div>
+        <div class="dashboard-agenda-list">${agenda.tasks.slice(0, 3).map(({ topic, due }) => `<div class="dashboard-agenda-item"><span class="agenda-priority-dot is-${due.priority}"></span><div><strong>${escapeHTML(topicReference(topic))} · ${escapeHTML(topic.title)}</strong><small>${due.reviewItems.length} élément${due.reviewItems.length > 1 ? 's' : ''} à consolider</small></div></div>`).join('') || '<p class="muted-copy">Tout est à jour pour aujourd’hui.</p>'}</div>
+        <button class="primary-button dashboard-agenda-button" data-go="progress" data-progress-tab="agenda" type="button">Ouvrir l’agenda journalier</button>
       </section>
     </div>`;
 
@@ -155,8 +334,11 @@ const renderDashboard = () => {
     setView('course');
   };
   $('#resume-course').addEventListener('click', openNext);
-  $('#open-next-lesson').addEventListener('click', openNext);
-  $$('[data-go]', $('#view-dashboard')).forEach((button) => button.addEventListener('click', () => setView(button.dataset.go)));
+  $$('[data-go]', $('#view-dashboard')).forEach((button) => button.addEventListener('click', () => {
+    if (button.dataset.progressTab) state.progressTab = button.dataset.progressTab;
+    saveState();
+    setView(button.dataset.go);
+  }));
 };
 
 const renderCatalog = (search = '') => {
@@ -259,8 +441,13 @@ const renderCourse = () => {
   bindCatalog();
 
   $('#complete-lesson').addEventListener('click', () => {
-    if (isCompleted(lesson.id)) state.completedLessons = state.completedLessons.filter((id) => id !== lesson.id);
-    else state.completedLessons = unique([...state.completedLessons, lesson.id]);
+    if (isCompleted(lesson.id)) {
+      state.completedLessons = state.completedLessons.filter((id) => id !== lesson.id);
+      delete state.reviewStats.lesson[lesson.id];
+    } else {
+      state.completedLessons = unique([...state.completedLessons, lesson.id]);
+      recordStudyResult('lesson', lesson.id, true, false);
+    }
     saveState();
     updateProgressUI();
     renderCourse();
@@ -349,9 +536,13 @@ const filteredDefinitions = () => {
 const glossaryScopeOptions = () => `<option value="all">Les 300 définitions</option>${DATA.plan.map((part) => `
   <optgroup label="${part.id}. ${escapeHTML(part.title)} (${part.count})">
     <option value="${part.id}">Toute la partie (${part.count})</option>
-    ${part.sections.map((section) => {
+    ${part.sections.map((section, sectionIndex) => {
       const count = DATA.definitions.filter((definition) => definition.sectionId === section.id).length;
-      return `<option value="${section.id}">${escapeHTML(section.title)} (${count})</option>`;
+      return `<option value="${section.id}">${escapeHTML(section.title)} (${count})</option>
+        ${section.topics.map((topic, topicIndex) => {
+          const topicCount = DATA.definitions.filter((definition) => definition.topicId === topic.id).length;
+          return `<option value="${topic.id}">↳ ${part.id}.${sectionIndex + 1}.${topicIndex + 1} ${escapeHTML(topic.title)} (${topicCount})</option>`;
+        }).join('')}`;
     }).join('')}
   </optgroup>`).join('')}`;
 
@@ -418,11 +609,13 @@ const renderGlossary = () => {
   $('#known-card').addEventListener('click', () => {
     state.knownDefinitions = known ? state.knownDefinitions.filter((id) => id !== current.id) : unique([...state.knownDefinitions, current.id]);
     if (!known) state.weakDefinitions = state.weakDefinitions.filter((id) => id !== current.id);
+    if (!known) recordStudyResult('definition', current.id, true, false);
     saveState(); renderGlossary();
   });
   $('#weak-card').addEventListener('click', () => {
     state.weakDefinitions = weak ? state.weakDefinitions.filter((id) => id !== current.id) : unique([...state.weakDefinitions, current.id]);
     if (!weak) state.knownDefinitions = state.knownDefinitions.filter((id) => id !== current.id);
+    if (!weak) recordStudyResult('definition', current.id, false, false);
     saveState(); renderGlossary();
   });
   $$('[data-definition]').forEach((row) => {
@@ -460,9 +653,13 @@ const trainingScopeOptions = (mode = state.trainingMode) => {
     const partCount = source.filter((item) => item.partId === part.id).length;
     return `<optgroup label="${part.id}. ${escapeHTML(part.title)}">
       <option value="${part.id}">Toute la partie (${label(partCount)})</option>
-      ${part.sections.map((section) => {
+      ${part.sections.map((section, sectionIndex) => {
         const count = source.filter((item) => item.sectionId === section.id).length;
-        return `<option value="${section.id}">${escapeHTML(section.title)} (${label(count)})</option>`;
+        return `<option value="${section.id}">${escapeHTML(section.title)} (${label(count)})</option>
+          ${section.topics.map((topic, topicIndex) => {
+            const topicCount = source.filter((item) => item.topicId === topic.id).length;
+            return `<option value="${topic.id}">↳ ${part.id}.${sectionIndex + 1}.${topicIndex + 1} ${escapeHTML(topic.title)} (${label(topicCount)})</option>`;
+          }).join('')}`;
       }).join('')}
     </optgroup>`;
   }).join('')}`;
@@ -470,7 +667,7 @@ const trainingScopeOptions = (mode = state.trainingMode) => {
 
 const trainingScopeName = (scope = state.trainingScope) => {
   if (scope === 'all') return 'tout le programme';
-  return getSection(scope)?.title || getPart(scope)?.title || 'la sélection';
+  return getTopic(scope)?.title || getSection(scope)?.title || getPart(scope)?.title || 'la sélection';
 };
 
 const renderTraining = () => {
@@ -530,19 +727,53 @@ const sessionProgress = () => {
   return `<div class="quiz-top"><strong>Question ${session.index + 1} / ${session.items.length}</strong><div class="light-track"><span style="width:${percent}%"></span></div><span>Score : ${session.score}</span></div>`;
 };
 
-const recordAnswer = (correct, definitionId = null) => {
+const recordStudyResult = (kind, itemId, correct, countAttempt = true) => {
+  if (!state.reviewStats[kind] || !itemId) return;
+  const previous = state.reviewStats[kind][itemId] || { attempts: 0, correct: 0, streak: 0 };
+  const attempts = countAttempt ? previous.attempts + 1 : Math.max(1, previous.attempts);
+  const correctCount = countAttempt
+    ? previous.correct + (correct ? 1 : 0)
+    : Math.max(previous.correct, correct ? 1 : 0);
+  const streak = correct ? (previous.streak || 0) + 1 : 0;
+  const intervals = [1, 3, 7, 14, 30, 60];
+  const interval = correct ? intervals[Math.min(streak - 1, intervals.length - 1)] : 1;
+  state.reviewStats[kind][itemId] = {
+    attempts,
+    correct: correctCount,
+    streak,
+    lastCorrect: Boolean(correct),
+    lastReviewed: new Date().toISOString(),
+    nextReview: addDays(todayKey(), interval),
+  };
+};
+
+const markTopicReviewed = (topicId, hideForToday = false) => {
+  if (!getTopic(topicId)) return;
+  state.topicReviewLog[topicId] = new Date().toISOString();
+  if (hideForToday) {
+    const today = todayKey();
+    state.agendaDone[today] = unique([...(state.agendaDone[today] || []), topicId]);
+  }
+  saveState();
+};
+
+const recordAnswer = (correct, itemId = null, kind = 'definition') => {
   state.answered += 1;
   if (correct) state.correct += 1;
-  if (definitionId) {
+  if (itemId) {
+    recordStudyResult(kind, itemId, correct);
+  }
+  if (kind === 'definition' && itemId) {
     if (correct) {
-      state.knownDefinitions = unique([...state.knownDefinitions, definitionId]);
-      state.weakDefinitions = state.weakDefinitions.filter((id) => id !== definitionId);
+      state.knownDefinitions = unique([...state.knownDefinitions, itemId]);
+      state.weakDefinitions = state.weakDefinitions.filter((id) => id !== itemId);
     } else {
-      state.weakDefinitions = unique([...state.weakDefinitions, definitionId]);
-      state.knownDefinitions = state.knownDefinitions.filter((id) => id !== definitionId);
+      state.weakDefinitions = unique([...state.weakDefinitions, itemId]);
+      state.knownDefinitions = state.knownDefinitions.filter((id) => id !== itemId);
     }
   }
   saveState();
+  updateProgressUI();
 };
 
 const nextTrainingQuestion = () => {
@@ -831,7 +1062,7 @@ const renderCloze = () => {
     session.answered = true;
     const correct = cloze.answers.every((answer, index) => normalize(answer).trim() === normalize(cloze.selected[index] || '').trim());
     if (correct) session.score += 1;
-    recordAnswer(correct, formulaMode ? null : item.id);
+    recordAnswer(correct, item.id, formulaMode ? 'formula' : 'definition');
     $$('[data-slot]').forEach((slot) => {
       const index = Number(slot.dataset.slot);
       slot.classList.add(normalize(cloze.answers[index]).trim() === normalize(cloze.selected[index] || '').trim() ? 'is-correct' : 'is-wrong');
@@ -850,10 +1081,330 @@ const renderCloze = () => {
 
 const renderTrainingResults = () => {
   const session = trainingSession;
+  if (!session.reviewLogged) {
+    unique(session.items.map((item) => item.topicId).filter(Boolean)).forEach((topicId) => markTopicReviewed(topicId));
+    session.reviewLogged = true;
+  }
   const percent = Math.round((session.score / session.items.length) * 100);
   $('#view-training').innerHTML = `<section class="panel results-card"><div class="results-score">${percent}%</div><span class="eyebrow">Session terminée</span><h2>${session.score} bonne${session.score > 1 ? 's' : ''} réponse${session.score > 1 ? 's' : ''} sur ${session.items.length}</h2><p>${percent >= 80 ? 'Très solide. Tu peux avancer ou augmenter le nombre de trous.' : percent >= 60 ? 'La base est là. Une seconde session fixera les hésitations.' : 'Les erreurs sont maintenant identifiées : révise les cartes faibles puis recommence.'}</p><div class="control-row" style="justify-content:center"><button class="secondary-button" id="back-training" type="button">Changer de mode</button><button class="primary-button" id="restart-training" type="button">Recommencer</button></div></section>`;
   $('#back-training').addEventListener('click', () => { trainingSession = null; renderTraining(); });
   $('#restart-training').addEventListener('click', () => { trainingSession = null; startTraining(); });
+};
+
+const progressScopeOptions = () => `<option value="all">Tout le programme</option>${DATA.plan.map((part) => `
+  <optgroup label="${part.id}. ${escapeHTML(part.title)}">
+    <option value="${part.id}">Toute la partie ${part.id}</option>
+    ${part.sections.map((section, sectionIndex) => `<option value="${section.id}">${escapeHTML(section.title)}</option>
+      ${section.topics.map((topic, topicIndex) => `<option value="${topic.id}">↳ ${part.id}.${sectionIndex + 1}.${topicIndex + 1} ${escapeHTML(topic.title)}</option>`).join('')}`).join('')}
+  </optgroup>`).join('')}`;
+
+const topicMatchesProgressScope = (topic, scope) => (
+  scope === 'all'
+  || topic.part.id === scope
+  || topic.section.id === scope
+  || topic.id === scope
+);
+
+const progressStatusLabel = (stats) => {
+  if (!stats.lastActivity && stats.adjusted === 0) return { label: 'À découvrir', className: 'is-new' };
+  if (stats.reviewItems.length || stats.adjusted < 80) return { label: 'À consolider', className: 'is-review' };
+  return { label: 'Maîtrisé', className: 'is-mastered' };
+};
+
+const renderProgressItemList = (kind, items) => {
+  const emptyLabels = {
+    lesson: 'Aucune leçon dans cette rubrique.',
+    definition: 'Aucune définition dans cette rubrique.',
+    formula: 'Aucune formule dans cette rubrique.',
+  };
+  if (!items.length) return `<p class="progress-empty">${emptyLabels[kind]}</p>`;
+  return `<ul class="progress-item-list">${items.map((item) => {
+    const status = itemStatus(kind, item);
+    const mastery = itemMastery(kind, item);
+    const title = kind === 'definition' ? item.term : kind === 'formula' ? item.name : item.title;
+    return `<li>
+      <span class="item-status-dot is-${status.id}" aria-hidden="true"></span>
+      <span><strong>${escapeHTML(title)}</strong><small>${escapeHTML(status.label)}${mastery ? ` · ${mastery} %` : ''}</small></span>
+    </li>`;
+  }).join('')}</ul>`;
+};
+
+const sectionProgressStats = (section) => {
+  const topics = section.topics;
+  const lessons = unique(topics.flatMap((topic) => topic.lessons)).map(getLesson).filter(Boolean);
+  const definitions = DATA.definitions.filter((item) => item.sectionId === section.id);
+  const formulas = DATA.formulas.filter((item) => item.sectionId === section.id);
+  const values = topics.map((topic) => topicStats(topic.id).adjusted);
+  return {
+    lessons: lessons.length,
+    definitions: definitions.length,
+    formulas: formulas.length,
+    level: values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0,
+  };
+};
+
+const reviewSentence = (stats) => {
+  const chunks = [];
+  const lessonCount = stats.content.lessons.filter((item) => itemStatus('lesson', item).id !== 'mastered').length;
+  const definitionCount = stats.content.definitions.filter((item) => itemStatus('definition', item).id !== 'mastered').length;
+  const formulaCount = stats.content.formulas.filter((item) => itemStatus('formula', item).id !== 'mastered').length;
+  if (lessonCount) chunks.push(`${lessonCount} leçon${lessonCount > 1 ? 's' : ''}`);
+  if (definitionCount) chunks.push(`${definitionCount} définition${definitionCount > 1 ? 's' : ''}`);
+  if (formulaCount) chunks.push(`${formulaCount} formule${formulaCount > 1 ? 's' : ''}`);
+  return chunks.length ? chunks.join(' · ') : 'Aucun élément faible actuellement';
+};
+
+const renderTopicProgress = (topic) => {
+  const stats = topicStats(topic.id);
+  const due = topicDueInfo(topic.id);
+  const status = progressStatusLabel(stats);
+  const open = state.progressOpenTopics.includes(topic.id);
+  const metric = (label, category, emptyLabel) => `<div class="topic-metric">
+    <span>${label}</span>
+    <strong>${category.count}</strong>
+    <small>${category.count ? `${category.mastered}/${category.count} maîtrisé${category.mastered > 1 ? 's' : ''}` : emptyLabel}</small>
+    <div class="light-track"><span style="width:${category.percent ?? 0}%"></span></div>
+  </div>`;
+  return `<details class="progress-topic" data-progress-topic="${topic.id}" ${open ? 'open' : ''}>
+    <summary>
+      <div class="topic-summary-main">
+        <span class="topic-reference">${escapeHTML(topicReference(topic))}</span>
+        <div><strong>${escapeHTML(topic.title)}</strong><small>${escapeHTML(topic.section.title)}</small></div>
+      </div>
+      <div class="topic-counts">
+        <span>${stats.lessons.count} leçon${stats.lessons.count > 1 ? 's' : ''}</span>
+        <span>${stats.definitions.count} définition${stats.definitions.count > 1 ? 's' : ''}</span>
+        <span>${stats.formulas.count} formule${stats.formulas.count > 1 ? 's' : ''}</span>
+      </div>
+      <div class="topic-level"><strong>${stats.adjusted} %</strong><span class="progress-status ${status.className}">${status.label}</span></div>
+    </summary>
+    <div class="topic-detail">
+      <div class="topic-metrics">
+        ${metric('Cours', stats.lessons, 'aucune leçon')}
+        ${metric('Lexique', stats.definitions, 'aucune définition')}
+        ${metric('Formules', stats.formulas, 'aucune formule')}
+      </div>
+      <div class="topic-review-callout">
+        <div><span class="eyebrow">À réviser</span><strong>${escapeHTML(reviewSentence(stats))}</strong><small>Prochaine révision conseillée : ${due.dueDate <= todayKey() ? 'aujourd’hui' : escapeHTML(formatDay(due.dueDate, { weekday: undefined }))}</small></div>
+        <div class="topic-actions">
+          ${stats.lessons.count ? `<button class="secondary-button" data-revise-kind="lesson" data-topic-id="${topic.id}" type="button">Ouvrir le cours</button>` : ''}
+          ${stats.definitions.count ? `<button class="secondary-button" data-revise-kind="definition" data-topic-id="${topic.id}" type="button">Entraîner le lexique</button>` : ''}
+          ${stats.formulas.count ? `<button class="secondary-button" data-revise-kind="formula" data-topic-id="${topic.id}" type="button">Réviser les formules</button>` : ''}
+        </div>
+      </div>
+      <div class="topic-evaluation">
+        <div class="calculated-level">
+          <span>Niveau calculé</span><strong>${stats.automatic} %</strong><small>résultats, erreurs et répétitions</small>
+        </div>
+        <label>Ton auto-évaluation
+          <select data-topic-rating="${topic.id}">
+            <option value="0" ${!stats.rating ? 'selected' : ''}>Non renseignée</option>
+            ${[1, 2, 3, 4, 5].map((score) => `<option value="${score}" ${stats.rating === score ? 'selected' : ''}>${score}/5 · ${['Très difficile', 'Fragile', 'Moyen', 'Bon', 'Maîtrisé'][score - 1]}</option>`).join('')}
+          </select>
+        </label>
+        <div class="adjusted-level">
+          <span>Niveau ajusté</span><strong>${stats.adjusted} %</strong><small>80 % résultats + 20 % ressenti</small>
+        </div>
+      </div>
+      <div class="topic-notes">
+        <label for="note-${topic.id}">Mes notes pour cette rubrique</label>
+        <textarea id="note-${topic.id}" data-topic-note="${topic.id}" rows="4" placeholder="Ex. : je confonds encore amortissement et dépréciation…">${escapeHTML(state.topicNotes[topic.id] || '')}</textarea>
+        <button class="primary-button" data-save-topic-note="${topic.id}" type="button">Enregistrer la note</button>
+      </div>
+      <div class="topic-content-lists">
+        <section><h3>Leçons (${stats.lessons.count})</h3>${renderProgressItemList('lesson', stats.content.lessons)}</section>
+        <section><h3>Définitions du lexique (${stats.definitions.count})</h3>${renderProgressItemList('definition', stats.content.definitions)}</section>
+        <section><h3>Formules (${stats.formulas.count})</h3>${renderProgressItemList('formula', stats.content.formulas)}</section>
+      </div>
+    </div>
+  </details>`;
+};
+
+const buildDailyAgenda = () => {
+  const today = todayKey();
+  const done = new Set(state.agendaDone[today] || []);
+  const candidates = allTopics().map((topic) => ({ topic, due: topicDueInfo(topic.id) }));
+  const priorityOrder = { urgent: 0, soon: 1, maintain: 2 };
+  const activeDue = candidates
+    .filter(({ topic, due }) => due.hasActivity && due.isDue && !done.has(topic.id))
+    .sort((a, b) => (
+      priorityOrder[a.due.priority] - priorityOrder[b.due.priority]
+      || a.due.dueDate.localeCompare(b.due.dueDate)
+      || a.due.adjusted - b.due.adjusted
+    ));
+  const newTopics = candidates.filter(({ topic, due }) => !due.hasActivity && due.reviewItems.length && !done.has(topic.id));
+  const limit = 6;
+  const selectedActive = activeDue.slice(0, limit);
+  const newSlots = Math.min(2, Math.max(0, limit - selectedActive.length));
+  const selectedNew = newTopics.slice(0, newSlots);
+  const tasks = [...selectedActive, ...selectedNew];
+  return {
+    tasks,
+    dueTotal: activeDue.length + selectedNew.length,
+    backlog: Math.max(0, activeDue.length - selectedActive.length),
+    completed: done.size,
+  };
+};
+
+const agendaTaskMarkup = ({ topic, due }) => {
+  const lessonCount = due.content.lessons.filter((item) => itemStatus('lesson', item).id !== 'mastered').length;
+  const definitionCount = due.content.definitions.filter((item) => itemStatus('definition', item).id !== 'mastered').length;
+  const formulaCount = due.content.formulas.filter((item) => itemStatus('formula', item).id !== 'mastered').length;
+  const dueLabel = due.hasActivity
+    ? due.dueDate < todayKey() ? `En retard depuis le ${new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' }).format(dateFromKey(due.dueDate))}` : 'À revoir aujourd’hui'
+    : 'Nouvelle rubrique proposée';
+  return `<article class="agenda-task">
+    <div class="agenda-task-head">
+      <div class="agenda-task-title"><span class="agenda-priority-dot is-${due.priority}"></span><div><span>${escapeHTML(topicReference(topic))} · ${escapeHTML(topic.section.title)}</span><h3>${escapeHTML(topic.title)}</h3></div></div>
+      <div class="agenda-level"><strong>${due.adjusted} %</strong><small>${escapeHTML(dueLabel)}</small></div>
+    </div>
+    <div class="agenda-task-content">
+      ${lessonCount ? `<span>${lessonCount} leçon${lessonCount > 1 ? 's' : ''}</span>` : ''}
+      ${definitionCount ? `<span>${definitionCount} définition${definitionCount > 1 ? 's' : ''}</span>` : ''}
+      ${formulaCount ? `<span>${formulaCount} formule${formulaCount > 1 ? 's' : ''}</span>` : ''}
+    </div>
+    <div class="agenda-task-actions">
+      ${lessonCount ? `<button class="secondary-button" data-revise-kind="lesson" data-topic-id="${topic.id}" type="button">Cours</button>` : ''}
+      ${definitionCount ? `<button class="secondary-button" data-revise-kind="definition" data-topic-id="${topic.id}" type="button">Lexique</button>` : ''}
+      ${formulaCount ? `<button class="secondary-button" data-revise-kind="formula" data-topic-id="${topic.id}" type="button">Formules</button>` : ''}
+      <button class="ghost-button" data-open-progress-topic="${topic.id}" type="button">Voir le détail</button>
+      <button class="primary-button" data-agenda-done="${topic.id}" type="button">Révision faite</button>
+    </div>
+  </article>`;
+};
+
+const bindRevisionActions = (root) => {
+  $$('[data-revise-kind]', root).forEach((button) => button.addEventListener('click', () => {
+    const topicId = button.dataset.topicId;
+    const kind = button.dataset.reviseKind;
+    if (kind === 'lesson') {
+      const content = topicContent(topicId);
+      const lesson = content.lessons.find((item) => !isCompleted(item.id)) || content.lessons[0];
+      if (!lesson) return;
+      state.courseTopic = topicId;
+      state.courseLesson = lesson.id;
+      saveState();
+      setView('course');
+      return;
+    }
+    trainingSession = null;
+    state.trainingScope = topicId;
+    state.trainingMode = kind === 'formula' ? 'formula-cloze' : 'qcm-term';
+    saveState();
+    setView('training');
+  }));
+};
+
+const renderProgressRecap = () => {
+  const topics = allTopics().filter((topic) => topicMatchesProgressScope(topic, state.progressScope)).filter((topic) => {
+    const due = topicDueInfo(topic.id);
+    if (state.progressFilter === 'due') return due.isDue && due.hasActivity;
+    if (state.progressFilter === 'started') return due.hasActivity;
+    if (state.progressFilter === 'mastered') return due.adjusted >= 80 && !due.reviewItems.length;
+    return true;
+  });
+  const groups = DATA.plan.flatMap((part) => part.sections.map((section, sectionIndex) => {
+    const visibleTopics = topics.filter((topic) => topic.section.id === section.id);
+    if (!visibleTopics.length) return '';
+    const stats = sectionProgressStats(section);
+    return `<section class="progress-section-group">
+      <div class="progress-section-head">
+        <div class="progress-section-title"><span>${part.id}.${sectionIndex + 1}</span><div><small>${escapeHTML(part.title)}</small><h2>${escapeHTML(section.title.replace(/^[0-9]+°\s*/, ''))}</h2></div></div>
+        <div class="progress-section-counts"><span><strong>${stats.lessons}</strong> leçon${stats.lessons > 1 ? 's' : ''}</span><span><strong>${stats.definitions}</strong> définition${stats.definitions > 1 ? 's' : ''}</span><span><strong>${stats.formulas}</strong> formule${stats.formulas > 1 ? 's' : ''}</span></div>
+        <div class="progress-section-level"><strong>${stats.level} %</strong><small>niveau de la sous-partie</small></div>
+      </div>
+      <div class="progress-section-topics">${visibleTopics.map(renderTopicProgress).join('')}</div>
+    </section>`;
+  })).join('');
+  return `<div class="progress-controls">
+    <div class="field-group"><label for="progress-scope">Partie, sous-partie ou rubrique</label><select id="progress-scope">${progressScopeOptions()}</select></div>
+    <div class="field-group"><label for="progress-filter">Afficher</label><select id="progress-filter">
+      <option value="all">Toutes les rubriques</option>
+      <option value="due">À revoir aujourd’hui</option>
+      <option value="started">Déjà commencées</option>
+      <option value="mastered">Maîtrisées</option>
+    </select></div>
+    <div class="progress-legend"><span><i class="item-status-dot is-mastered"></i>Maîtrisé</span><span><i class="item-status-dot is-review"></i>À revoir</span><span><i class="item-status-dot is-new"></i>À découvrir</span></div>
+  </div>
+  <div class="progress-list">${groups || '<div class="panel empty-state"><strong>Aucune rubrique</strong>Modifie le filtre pour afficher d’autres éléments.</div>'}</div>`;
+};
+
+const renderDailyAgenda = () => {
+  const agenda = buildDailyAgenda();
+  return `<div class="daily-agenda-head">
+    <div><span class="eyebrow">Agenda journalier</span><h2>${escapeHTML(formatDay(todayKey()))}</h2><p>La liste est recalculée après chaque résultat, auto-évaluation et révision terminée.</p></div>
+    <div class="agenda-summary">
+      <span><strong>${agenda.tasks.length}</strong> à faire</span>
+      <span><strong>${agenda.completed}</strong> terminée${agenda.completed > 1 ? 's' : ''}</span>
+      ${agenda.backlog ? `<span><strong>${agenda.backlog}</strong> en attente</span>` : ''}
+    </div>
+  </div>
+  <div class="smart-rule panel"><strong>Comment la priorité est calculée</strong><p>Les erreurs et cartes faibles passent d’abord, puis viennent les notions anciennes ou fragiles. Une rubrique nouvelle n’est ajoutée que s’il reste de la place, pour éviter un agenda de 300 kilomètres.</p></div>
+  <div class="agenda-task-list">${agenda.tasks.map(agendaTaskMarkup).join('') || `<div class="panel agenda-empty"><span>✓</span><h3>Agenda terminé pour aujourd’hui</h3><p>Les prochaines révisions apparaîtront automatiquement le jour où elles seront utiles.</p></div>`}</div>`;
+};
+
+const renderProgress = () => {
+  $('#view-progress').innerHTML = `
+    <div class="page-heading">
+      <div><span class="eyebrow">Suivi notion par notion</span><h1>Progression & agenda</h1><p>Chaque rubrique DGFiP détaille ses leçons, ses définitions, ses formules, ton niveau et ce qui doit être revu.</p></div>
+      <div class="overall-level"><span>Maîtrise globale</span><strong>${globalMastery()} %</strong></div>
+    </div>
+    <div class="progress-tabs" role="tablist" aria-label="Suivi de révision">
+      <button class="${state.progressTab === 'recap' ? 'is-active' : ''}" data-progress-tab="recap" role="tab" aria-selected="${state.progressTab === 'recap'}" type="button">Récapitulatif détaillé</button>
+      <button class="${state.progressTab === 'agenda' ? 'is-active' : ''}" data-progress-tab="agenda" role="tab" aria-selected="${state.progressTab === 'agenda'}" type="button">Agenda du jour</button>
+    </div>
+    <div class="progress-tab-content">${state.progressTab === 'agenda' ? renderDailyAgenda() : renderProgressRecap()}</div>`;
+
+  $$('[data-progress-tab]', $('#view-progress')).forEach((button) => button.addEventListener('click', () => {
+    state.progressTab = button.dataset.progressTab;
+    saveState();
+    renderProgress();
+  }));
+  if (state.progressTab === 'recap') {
+    $('#progress-scope').value = state.progressScope;
+    $('#progress-filter').value = state.progressFilter;
+    $('#progress-scope').addEventListener('change', (event) => { state.progressScope = event.target.value; saveState(); renderProgress(); });
+    $('#progress-filter').addEventListener('change', (event) => { state.progressFilter = event.target.value; saveState(); renderProgress(); });
+    $$('[data-progress-topic]', $('#view-progress')).forEach((details) => details.addEventListener('toggle', () => {
+      state.progressOpenTopics = details.open
+        ? unique([...state.progressOpenTopics, details.dataset.progressTopic])
+        : state.progressOpenTopics.filter((id) => id !== details.dataset.progressTopic);
+      saveState();
+    }));
+    $$('[data-topic-rating]', $('#view-progress')).forEach((select) => select.addEventListener('change', () => {
+      const topicId = select.dataset.topicRating;
+      const score = Number(select.value);
+      if (score) state.topicRatings[topicId] = { score, updatedAt: new Date().toISOString() };
+      else delete state.topicRatings[topicId];
+      saveState();
+      updateProgressUI();
+      renderProgress();
+      toast(score ? 'Auto-évaluation enregistrée et niveau recalculé.' : 'Auto-évaluation supprimée.');
+    }));
+    $$('[data-save-topic-note]', $('#view-progress')).forEach((button) => button.addEventListener('click', () => {
+      const topicId = button.dataset.saveTopicNote;
+      state.topicNotes[topicId] = $(`[data-topic-note="${topicId}"]`, $('#view-progress')).value.trim();
+      saveState();
+      toast('Note enregistrée sur cet appareil.');
+    }));
+  } else {
+    $$('[data-agenda-done]', $('#view-progress')).forEach((button) => button.addEventListener('click', () => {
+      markTopicReviewed(button.dataset.agendaDone, true);
+      updateProgressUI();
+      renderProgress();
+      toast('Révision terminée. La prochaine date a été recalculée.');
+    }));
+    $$('[data-open-progress-topic]', $('#view-progress')).forEach((button) => button.addEventListener('click', () => {
+      const topicId = button.dataset.openProgressTopic;
+      state.progressTab = 'recap';
+      state.progressScope = topicId;
+      state.progressFilter = 'all';
+      state.progressOpenTopics = unique([...state.progressOpenTopics, topicId]);
+      saveState();
+      renderProgress();
+    }));
+  }
+  bindRevisionActions($('#view-progress'));
 };
 
 const voiceScore = (voice) => {
@@ -949,10 +1500,11 @@ const renderView = (view) => {
   if (view === 'formulas') renderFormulas();
   if (view === 'glossary') renderGlossary();
   if (view === 'training') renderTraining();
+  if (view === 'progress') renderProgress();
 };
 
 const setView = (view, updateHash = true) => {
-  const allowed = ['dashboard', 'course', 'formulas', 'glossary', 'training'];
+  const allowed = ['dashboard', 'course', 'formulas', 'glossary', 'training', 'progress'];
   if (!allowed.includes(view)) view = 'dashboard';
   if (currentView === 'course' && view !== 'course') stopSpeech();
   currentView = view;
