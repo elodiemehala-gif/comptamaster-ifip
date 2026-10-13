@@ -14,6 +14,9 @@ const defaultState = {
   glossaryScope: 'all',
   glossarySearch: '',
   glossaryCardId: 'D001',
+  customDefinitionIds: [],
+  glossarySelectionOnly: false,
+  trainingUseCustomSelection: false,
   formulaScope: 'all',
   formulaTab: 'formulas',
   trainingMode: 'qcm-term',
@@ -58,6 +61,11 @@ const loadState = () => {
 };
 
 const state = loadState();
+state.customDefinitionIds = Array.isArray(state.customDefinitionIds)
+  ? [...new Set(state.customDefinitionIds.filter((id) => DATA.definitions.some((definition) => definition.id === id)))]
+  : [];
+state.glossarySelectionOnly = Boolean(state.glossarySelectionOnly);
+state.trainingUseCustomSelection = Boolean(state.trainingUseCustomSelection);
 let currentView = 'dashboard';
 let trainingSession = null;
 let deferredInstallPrompt = null;
@@ -532,7 +540,7 @@ const filteredDefinitions = () => {
   return DATA.definitions.filter((definition) => {
     const inScope = isInScope(definition, state.glossaryScope);
     const matches = !query || normalize(`${definition.term} ${definition.definition}`).includes(query);
-    return inScope && matches;
+    return inScope && matches && (!state.glossarySelectionOnly || state.customDefinitionIds.includes(definition.id));
   });
 };
 
@@ -548,6 +556,66 @@ const glossaryScopeOptions = () => `<option value="all">Les 300 définitions</op
         }).join('')}`;
     }).join('')}
   </optgroup>`).join('')}`;
+
+function selectionCountLabel(count) {return `${count} définition${count > 1 ? 's' : ''} sélectionnée${count > 1 ? 's' : ''} sur ${DATA.definitions.length}`;}
+
+function renderCustomSelectionPanel() {
+  const count = state.customDefinitionIds.length;
+  return `<div class="custom-selection-panel">
+    <div class="custom-selection-description"><strong id="custom-selection-count" aria-live="polite">${selectionCountLabel(count)}</strong><small>Coche les notions à réviser, une par une. Ta liste reste enregistrée sur cet appareil.</small></div>
+    <div class="custom-selection-actions">
+      <button class="ghost-button" id="show-custom-selection" type="button" aria-pressed="${state.glossarySelectionOnly}">${state.glossarySelectionOnly ? 'Voir toutes les notions' : 'Voir ma sélection'}</button>
+      <button class="ghost-button" id="clear-custom-selection" type="button" ${count ? '' : 'disabled'}>Tout retirer</button>
+      <button class="primary-button" id="revise-custom-selection" type="button" ${count ? '' : 'disabled'}>Réviser (${count})</button>
+    </div>
+  </div>`;
+}
+
+function renderDefinitionChoice(definition, currentId) {
+  const selected = state.customDefinitionIds.includes(definition.id);
+  return `<article class="definition-row ${definition.id === currentId ? 'is-active' : ''} ${selected ? 'is-selected' : ''}">
+    <button class="definition-open" type="button" data-definition="${escapeHTML(definition.id)}" aria-label="Afficher la carte : ${escapeHTML(definition.term)}">
+      <strong>${escapeHTML(definition.term)}</strong><p>${escapeHTML(definition.definition)}</p>
+    </button>
+    <label class="definition-select"><input type="checkbox" data-select-definition="${escapeHTML(definition.id)}" ${selected ? 'checked' : ''} /><span>Réviser</span></label>
+  </article>`;
+}
+
+function bindCustomSelectionControls() {
+  $('#show-custom-selection').addEventListener('click', () => {
+    state.glossarySelectionOnly = !state.glossarySelectionOnly; saveState(); renderGlossary();
+  });
+  $('#clear-custom-selection').addEventListener('click', () => {
+    state.customDefinitionIds = []; saveState(); renderGlossary();
+  });
+  $('#revise-custom-selection').addEventListener('click', () => {
+    if (!state.customDefinitionIds.length) return;
+    trainingSession = null;
+    state.trainingUseCustomSelection = true;
+    if (state.trainingMode === 'formula-cloze') state.trainingMode = 'flashcards';
+    saveState(); setView('training');
+  });
+  $('[data-select-definition]').forEach((checkbox) => checkbox.addEventListener('change', () => {
+    const id = checkbox.dataset.selectDefinition;
+    if (checkbox.checked) state.customDefinitionIds = unique([...state.customDefinitionIds, id]);
+    else state.customDefinitionIds = state.customDefinitionIds.filter((selectedId) => selectedId !== id);
+    saveState();
+    if (state.glossarySelectionOnly && !checkbox.checked) { renderGlossary(); return; }
+    const count = state.customDefinitionIds.length;
+    $('#custom-selection-count').textContent = selectionCountLabel(count);
+    $('#clear-custom-selection').disabled = count === 0;
+    $('#revise-custom-selection').disabled = count === 0;
+    $('#revise-custom-selection').textContent = `Réviser (${count})`;
+    checkbox.closest('.definition-row').classList.toggle('is-selected', checkbox.checked);
+  }));
+}
+
+function renderTrainingSelectionField() {
+  return `<div class="field-group"><label for="training-source">Définitions à réviser</label><select id="training-source">
+    <option value="scope">Par partie du programme</option>
+    <option value="custom">Ma sélection (${state.customDefinitionIds.length})</option>
+  </select>${state.trainingUseCustomSelection ? '<button class="ghost-button" id="edit-custom-selection" type="button">Modifier ma sélection</button>' : ''}</div>`;
+}
 
 const renderGlossary = () => {
   const definitions = filteredDefinitions();
@@ -585,12 +653,19 @@ const renderGlossary = () => {
       </section>
       <section class="panel glossary-results">
         <div class="panel-head"><div><h2>Liste des notions</h2><p>${definitions.length} résultat${definitions.length > 1 ? 's' : ''}</p></div><button class="ghost-button" id="start-lexicon-quiz" type="button">Exercices du lexique</button></div>
-        <div class="definition-list">${definitions.map((definition) => `<article class="definition-row ${definition.id === current?.id ? 'is-active' : ''}" data-definition="${definition.id}" tabindex="0"><strong>${escapeHTML(definition.term)}</strong><p>${escapeHTML(definition.definition)}</p></article>`).join('')}</div>
+        ${renderCustomSelectionPanel()}
+        <div class="definition-list">${definitions.map((definition) => renderDefinitionChoice(definition, current?.id)).join('')}</div>
       </section>
     </div>`;
 
   $('#glossary-scope').value = state.glossaryScope;
-  $('#glossary-search').addEventListener('input', (event) => { state.glossarySearch = event.target.value; saveState(); renderGlossary(); });
+  $('#glossary-search').addEventListener('input', (event) => {
+    const caret = event.target.selectionStart;
+    state.glossarySearch = event.target.value;
+    saveState(); renderGlossary();
+    const field = $('#glossary-search'); field.focus();
+    try { field.setSelectionRange(caret, caret); } catch { /* Recherche sans gestion de position du curseur. */ }
+  });
   $('#glossary-scope').addEventListener('change', (event) => { state.glossaryScope = event.target.value; saveState(); renderGlossary(); });
   $('#shuffle-card').addEventListener('click', () => {
     if (!definitions.length) return;
@@ -601,9 +676,11 @@ const renderGlossary = () => {
     trainingSession = null;
     state.trainingMode = 'qcm-term';
     state.trainingScope = state.glossaryScope;
+    state.trainingUseCustomSelection = false;
     saveState();
     setView('training');
   });
+  bindCustomSelectionControls();
   if (!current) return;
   $('#flashcard').addEventListener('click', (event) => event.currentTarget.classList.toggle('is-flipped'));
   const chooseCard = (targetIndex) => { const target = definitions[targetIndex]; if (target) { state.glossaryCardId = target.id; saveState(); renderGlossary(); } };
@@ -624,7 +701,6 @@ const renderGlossary = () => {
   $$('[data-definition]').forEach((row) => {
     const activate = () => { state.glossaryCardId = row.dataset.definition; saveState(); renderGlossary(); };
     row.addEventListener('click', activate);
-    row.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') activate(); });
   });
 };
 
@@ -645,7 +721,10 @@ const trainingSource = (mode = state.trainingMode) => {
   return DATA.definitions;
 };
 
-const trainingPool = (mode = state.trainingMode, scope = state.trainingScope) => trainingSource(mode).filter((item) => isInScope(item, scope));
+const trainingPool = (mode = state.trainingMode, scope = state.trainingScope) => trainingSource(mode).filter((item) =>
+  mode !== 'formula-cloze' && state.trainingUseCustomSelection
+    ? state.customDefinitionIds.includes(item.id)
+    : isInScope(item, scope));
 
 const trainingScopeOptions = (mode = state.trainingMode) => {
   const source = trainingSource(mode);
@@ -683,12 +762,13 @@ const renderTraining = () => {
   const holesVisible = state.trainingMode === 'cloze';
   const pool = trainingPool();
   const unit = state.trainingMode === 'weak' ? 'carte faible' : 'définition';
-  const selectedName = trainingScopeName();
+  const selectedName = state.trainingUseCustomSelection ? 'ta sélection personnalisée' : trainingScopeName();
   $('#view-training').innerHTML = `
     <div class="page-heading"><div><span class="eyebrow">Rappel actif · 300 définitions</span><h1>Entraînement du lexique</h1><p>Choisis un exercice et une partie ou sous-partie du programme DGFiP.</p></div></div>
     <div class="training-setup">${lexiconTrainingModes.map((mode) => `<button class="mode-card ${mode.id === state.trainingMode ? 'is-selected' : ''}" data-mode="${mode.id}" type="button"><span class="mode-icon">${mode.icon}</span><h3>${mode.title}</h3><p>${mode.description}</p></button>`).join('')}</div>
     <div class="training-options">
-      <div class="field-group"><label for="training-scope">Partie ou sous-partie à réviser</label><select id="training-scope">${trainingScopeOptions()}</select></div>
+      ${renderTrainingSelectionField()}
+      <div class="field-group" ${state.trainingUseCustomSelection ? 'hidden' : ''}><label for="training-scope">Partie ou sous-partie à réviser</label><select id="training-scope">${trainingScopeOptions()}</select></div>
       <div class="field-group"><span class="field-label">Nombre de questions</span><div class="automatic-question-count"><strong>${pool.length}</strong><span>${unit}${pool.length > 1 ? 's' : ''} dans ${escapeHTML(selectedName)}</span></div><small>Chaque ${unit} sera proposée une fois.</small></div>
       <div class="field-group" id="holes-group" ${holesVisible ? '' : 'hidden'}><label for="training-holes">Difficulté du texte à trous</label><select id="training-holes">
         ${[1,2,3,4,5].map((number) => `<option value="${number}" ${String(state.trainingHoles) === String(number) ? 'selected' : ''}>${number} trou${number > 1 ? 's' : ''}${number === 1 ? ' · facile' : number === 3 ? ' · moyen' : number === 5 ? ' · difficile' : ''}</option>`).join('')}
@@ -697,6 +777,13 @@ const renderTraining = () => {
       <div class="field-group" id="cloze-assistance-group" ${holesVisible ? '' : 'hidden'}><label for="training-cloze-assistance">Mode de réponse</label><select id="training-cloze-assistance"><option value="pills" ${state.trainingClozeAssistance === 'pills' ? 'selected' : ''}>Avec pastilles · mots proposés</option><option value="typing" ${state.trainingClozeAssistance === 'typing' ? 'selected' : ''}>Sans pastilles · réponse libre</option></select></div>
       <button class="primary-button" id="start-training" type="button" ${pool.length ? '' : 'disabled'}>Commencer les ${pool.length} question${pool.length > 1 ? 's' : ''}</button>
     </div>`;
+  $('#training-source').value = state.trainingUseCustomSelection ? 'custom' : 'scope';
+  $('#training-source').addEventListener('change', (event) => {
+    state.trainingUseCustomSelection = event.target.value === 'custom'; saveState(); renderTraining();
+  });
+  $('#edit-custom-selection')?.addEventListener('click', () => {
+    state.glossarySelectionOnly = true; saveState(); setView('glossary');
+  });
   $('#training-scope').value = state.trainingScope;
   $$('[data-mode]', $('#view-training')).forEach((button) => button.addEventListener('click', () => {
     state.trainingMode = button.dataset.mode;
@@ -754,7 +841,7 @@ const startTraining = () => {
   trainingSession = {
     mode: mode === 'weak' ? 'flashcards' : mode,
     items: shuffle(pool),
-    scope: state.trainingScope,
+    scope: mode !== 'formula-cloze' && state.trainingUseCustomSelection ? 'all' : state.trainingScope,
     index: 0,
     score: 0,
     answered: false,

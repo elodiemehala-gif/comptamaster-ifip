@@ -334,13 +334,24 @@ main { grid-column: 2; grid-row: 2; min-width: 0; }
 .flashcard-controls button:first-child { justify-self: start; }
 .flashcard-controls button:last-child { justify-self: end; }
 
+.custom-selection-panel { display: grid; gap: 12px; margin: 14px 0; padding: 15px; border: 1px solid var(--border); border-radius: 13px; background: var(--surface-2); }
+.custom-selection-description { display: grid; gap: 5px; }
+.custom-selection-description strong { font-size: .93rem; }
+.custom-selection-description small { color: var(--ink-soft); line-height: 1.5; }
+.custom-selection-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.custom-selection-actions button { font-size: .82rem; }
+.definition-row.is-selected { border-color: var(--blue); }
+.definition-open { flex: 1; min-width: 0; padding: 14px 0 14px 15px; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.definition-open:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 12px; }
+.definition-select { display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; margin: 13px 12px 13px 4px; color: var(--ink-soft); font-size: .76rem; font-weight: 700; cursor: pointer; }
+.definition-select input { width: 19px; height: 19px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .glossary-results { min-height: 500px; }
 .definition-list { display: grid; gap: 9px; max-height: 760px; overflow: auto; padding-right: 5px; scrollbar-width: thin; }
-.definition-row { padding: 14px 15px; border: 1px solid var(--border); border-radius: 13px; background: var(--surface); cursor: pointer; }
+.definition-row { display: flex; align-items: flex-start; padding: 0; border: 1px solid var(--border); border-radius: 13px; background: var(--surface); cursor: pointer; }
 .definition-row:hover { border-color: var(--blue); }
 .definition-row.is-active { border-color: var(--accent); background: var(--accent-soft); }
-.definition-row strong { display: block; font-size: .88rem; }
-.definition-row p { display: -webkit-box; margin: 5px 0 0; overflow: hidden; color: var(--ink-soft); font-size: .78rem; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.definition-open strong { display: block; font-size: .88rem; }
+.definition-open p { display: -webkit-box; margin: 5px 0 0; overflow: hidden; color: var(--ink-soft); font-size: .78rem; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 
 .training-setup { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; }
 .mode-card { position: relative; min-height: 150px; padding: 20px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); text-align: left; cursor: pointer; transition: 160ms ease; }
@@ -354,6 +365,7 @@ main { grid-column: 2; grid-row: 2; min-width: 0; }
 .field-group label { color: var(--ink-soft); font-size: .74rem; font-weight: 700; }
 .field-group select { height: 42px; min-width: 155px; padding: 0 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-2); color: var(--ink); }
 .training-options .primary-button { margin-left: auto; }
+.field-group[hidden] { display: none; }
 
 .quiz-shell { max-width: 900px; margin: 0 auto; }
 .quiz-top { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; margin-bottom: 18px; }
@@ -665,6 +677,9 @@ main { grid-column: 2; grid-row: 2; min-width: 0; }
   .plan-progress-row .light-track { grid-column: 1 / -1; grid-row: 2; }
   .plan-progress-row small { grid-column: 2; grid-row: 1; }
   .training-setup { grid-template-columns: 1fr; }
+  .custom-selection-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .custom-selection-actions .primary-button { grid-column: 1 / -1; }
+  .definition-select span { display: none; }
   .training-options { display: grid; }
   .training-options .primary-button { width: 100%; margin: 0; }
   .field-group select { width: 100%; }
