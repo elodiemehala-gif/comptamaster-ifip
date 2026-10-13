@@ -7,7 +7,7 @@
     "build": "rm -rf dist && mkdir -p dist && cp -R app/. dist/",
     "build:android-assets": "node scripts/prepare-android-assets.mjs",
     "generate:icons": "python3 scripts/generate-icons.py",
-    "test": "node scripts/validate.mjs",
+    "test": "node scripts/validate.mjs && node scripts/validate-custom-selection.mjs",
     "test:android": "node scripts/validate-android.mjs"
   }
 }
