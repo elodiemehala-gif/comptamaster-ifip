@@ -583,7 +583,9 @@ function renderDefinitionChoice(definition, currentId) {
 
 function bindCustomSelectionControls() {
   $('#show-custom-selection').addEventListener('click', () => {
-    state.glossarySelectionOnly = !state.glossarySelectionOnly; saveState(); renderGlossary();
+    state.glossarySelectionOnly = !state.glossarySelectionOnly;
+    if (state.glossarySelectionOnly) { state.glossaryScope = 'all'; state.glossarySearch = ''; }
+    saveState(); renderGlossary();
   });
   $('#clear-custom-selection').addEventListener('click', () => {
     state.customDefinitionIds = []; saveState(); renderGlossary();
@@ -595,10 +597,12 @@ function bindCustomSelectionControls() {
     if (state.trainingMode === 'formula-cloze') state.trainingMode = 'flashcards';
     saveState(); setView('training');
   });
-  $('[data-select-definition]').forEach((checkbox) => checkbox.addEventListener('change', () => {
+  $$('[data-select-definition]').forEach((checkbox) => checkbox.addEventListener('change', () => {
     const id = checkbox.dataset.selectDefinition;
-    if (checkbox.checked) state.customDefinitionIds = unique([...state.customDefinitionIds, id]);
-    else state.customDefinitionIds = state.customDefinitionIds.filter((selectedId) => selectedId !== id);
+    if (checkbox.checked) {
+      state.customDefinitionIds = unique([...state.customDefinitionIds, id]);
+      state.trainingUseCustomSelection = true;
+    } else state.customDefinitionIds = state.customDefinitionIds.filter((selectedId) => selectedId !== id);
     saveState();
     if (state.glossarySelectionOnly && !checkbox.checked) { renderGlossary(); return; }
     const count = state.customDefinitionIds.length;
@@ -606,6 +610,7 @@ function bindCustomSelectionControls() {
     $('#clear-custom-selection').disabled = count === 0;
     $('#revise-custom-selection').disabled = count === 0;
     $('#revise-custom-selection').textContent = `Réviser (${count})`;
+    $('#start-lexicon-quiz').textContent = count ? `Entraîner ma sélection (${count})` : 'Exercices du lexique';
     checkbox.closest('.definition-row').classList.toggle('is-selected', checkbox.checked);
   }));
 }
@@ -652,7 +657,7 @@ const renderGlossary = () => {
         </div>` : '<div class="panel empty-state"><strong>Aucun résultat</strong>Essaie un autre mot ou une autre partie.</div>'}
       </section>
       <section class="panel glossary-results">
-        <div class="panel-head"><div><h2>Liste des notions</h2><p>${definitions.length} résultat${definitions.length > 1 ? 's' : ''}</p></div><button class="ghost-button" id="start-lexicon-quiz" type="button">Exercices du lexique</button></div>
+        <div class="panel-head"><div><h2>Liste des notions</h2><p>${definitions.length} résultat${definitions.length > 1 ? 's' : ''}</p></div><button class="ghost-button" id="start-lexicon-quiz" type="button">${state.customDefinitionIds.length ? `Entraîner ma sélection (${state.customDefinitionIds.length})` : 'Exercices du lexique'}</button></div>
         ${renderCustomSelectionPanel()}
         <div class="definition-list">${definitions.map((definition) => renderDefinitionChoice(definition, current?.id)).join('')}</div>
       </section>
@@ -676,7 +681,7 @@ const renderGlossary = () => {
     trainingSession = null;
     state.trainingMode = 'qcm-term';
     state.trainingScope = state.glossaryScope;
-    state.trainingUseCustomSelection = false;
+    state.trainingUseCustomSelection = state.customDefinitionIds.length > 0;
     saveState();
     setView('training');
   });
@@ -764,7 +769,7 @@ const renderTraining = () => {
   const unit = state.trainingMode === 'weak' ? 'carte faible' : 'définition';
   const selectedName = state.trainingUseCustomSelection ? 'ta sélection personnalisée' : trainingScopeName();
   $('#view-training').innerHTML = `
-    <div class="page-heading"><div><span class="eyebrow">Rappel actif · 300 définitions</span><h1>Entraînement du lexique</h1><p>Choisis un exercice et une partie ou sous-partie du programme DGFiP.</p></div></div>
+    <div class="page-heading"><div><span class="eyebrow">Rappel actif · 300 définitions</span><h1>Entraînement du lexique</h1><p>${state.trainingUseCustomSelection ? `Tu révises ta liste personnelle de ${state.customDefinitionIds.length} définitions. Choisis ton exercice ci-dessous.` : 'Choisis un exercice et une partie ou sous-partie du programme DGFiP.'}</p></div></div>
     <div class="training-setup">${lexiconTrainingModes.map((mode) => `<button class="mode-card ${mode.id === state.trainingMode ? 'is-selected' : ''}" data-mode="${mode.id}" type="button"><span class="mode-icon">${mode.icon}</span><h3>${mode.title}</h3><p>${mode.description}</p></button>`).join('')}</div>
     <div class="training-options">
       ${renderTrainingSelectionField()}
