@@ -73,6 +73,7 @@ const sandbox = {
 };
 vm.createContext(sandbox);
 vm.runInContext(
+  extract('function selectionCountLabel(', 'function renderCustomSelectionPanel()') +
   extract('function bindCustomSelectionControls()', 'function renderTrainingSelectionField()') +
   extract('const trainingSource =', 'const trainingScopeOptions =') +
   extract('const startTraining =', 'const sessionProgress =') +
