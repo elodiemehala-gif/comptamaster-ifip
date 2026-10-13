@@ -597,7 +597,7 @@ function bindCustomSelectionControls() {
     if (state.trainingMode === 'formula-cloze') state.trainingMode = 'flashcards';
     saveState(); setView('training');
   });
-  $('[data-select-definition]').forEach((checkbox) => checkbox.addEventListener('change', () => {
+  $$('[data-select-definition]').forEach((checkbox) => checkbox.addEventListener('change', () => {
     const id = checkbox.dataset.selectDefinition;
     if (checkbox.checked) {
       state.customDefinitionIds = unique([...state.customDefinitionIds, id]);
