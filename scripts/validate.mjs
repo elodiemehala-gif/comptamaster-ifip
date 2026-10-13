@@ -63,7 +63,7 @@ assert(applicationSource.includes('items: shuffle(pool)'), 'Une session doit con
 assert(applicationSource.includes('customDefinitionIds'), 'La liste personnalisée doit être mémorisée.');
 assert(applicationSource.includes('data-select-definition'), 'Le lexique doit proposer une case pour chaque notion.');
 assert(applicationSource.includes("$('[data-select-definition]').forEach"), 'Toutes les cases doivent disposer de leur gestionnaire de sélection.');
-assert(!applicationSource.includes("$('[data-select-definition]').forEach"), 'Interdire la régression : querySelector renvoie un élément unique, pas une liste.');
+assert(!/(^|[^$])\$\('\[data-select-definition\]'\)\.forEach/m.test(applicationSource), 'Interdire la régression : querySelector renvoie un élément unique, pas une liste.');
 assert(applicationSource.includes('state.trainingUseCustomSelection = state.customDefinitionIds.length > 0'), 'Le raccourci exercices du lexique doit conserver la sélection active.');
 assert(applicationSource.includes('trainingUseCustomSelection'), 'Les sessions doivent exploiter la liste personnalisée.');
 assert(applicationSource.includes("scope: mode !== 'formula-cloze'"), 'Les QCM doivent permettre les choix pour une sélection de petite taille.');
