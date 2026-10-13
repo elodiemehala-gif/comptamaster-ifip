@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { DATA } from '../app/data.js';
 import { FORMULA_DETAILS } from '../app/formula-details.js';
 
@@ -53,11 +54,16 @@ for (const file of ['index.html', 'styles.css', 'app.js', 'data.js', 'sw.js', 'm
   assert(fs.existsSync(path.join(root, 'app', file)), `Ressource PWA manquante : ${file}`);
 }
 
+execFileSync(process.execPath, ['--check', path.join(root, 'app', 'app.js')]);
 const applicationSource = fs.readFileSync(path.join(root, 'app', 'app.js'), 'utf8');
 assert(!applicationSource.includes('<option value="5">5 questions</option>'), 'Le choix fixe 5/10/20 ne doit plus être proposé.');
 assert(applicationSource.includes('item.sectionId === scope'), 'Les sessions doivent pouvoir être filtrées par sous-partie.');
 assert(applicationSource.includes('item.topicId === scope'), 'Les sessions doivent pouvoir être filtrées par rubrique précise.');
 assert(applicationSource.includes('items: shuffle(pool)'), 'Une session doit contenir toutes les définitions de la sélection.');
+assert(applicationSource.includes('customDefinitionIds'), 'La liste personnalisée doit être mémorisée.');
+assert(applicationSource.includes('data-select-definition'), 'Le lexique doit proposer une case pour chaque notion.');
+assert(applicationSource.includes('trainingUseCustomSelection'), 'Les sessions doivent exploiter la liste personnalisée.');
+assert(applicationSource.includes("scope: mode !== 'formula-cloze'"), 'Les QCM doivent permettre les choix pour une sélection de petite taille.');
 assert(applicationSource.includes('topicNotes'), 'Le suivi doit permettre des notes personnelles par rubrique.');
 assert(applicationSource.includes('topicRatings'), 'Le suivi doit conserver une auto-évaluation par rubrique.');
 assert(applicationSource.includes('buildDailyAgenda'), 'L’agenda journalier adaptatif doit être présent.');
