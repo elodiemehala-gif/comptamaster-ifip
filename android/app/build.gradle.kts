@@ -15,6 +15,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".corrige"
+            versionNameSuffix = "-corrige"
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
